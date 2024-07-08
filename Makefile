@@ -1,12 +1,15 @@
-all:
-	g++ main.cpp -o a.out
+client:
+	protoc base.proto --cpp_out=./out
+	g++ -c ./out/base.pb.cc -o ./out/base.pb.o -lprotobuf
+	g++ -c ./rpc.cpp -o ./out/rpc.o -lprotobuf
+	g++ -c client.cpp -o ./out/client.o -lprotobuf
+	g++ ./out/base.pb.o ./out/rpc.o ./out/client.o -o a.out -lprotobuf
 	./a.out
 
-client:
-	g++ client.cpp -o b.out
-	./b.out
-
-
 server:
-	g++ server.cpp -o c.out
-	./c.out
+	protoc base.proto --cpp_out=./out
+	g++ -c ./out/base.pb.cc -o ./out/base.pb.o -lprotobuf
+	g++ -c ./rpc.cpp -o ./out/rpc.o -lprotobuf
+	g++ -c server.cpp -o ./out/server.o -lprotobuf
+	g++ ./out/base.pb.o ./out/rpc.o ./out/server.o -o b.out -lprotobuf
+	./b.out

@@ -12,16 +12,23 @@ message ConnectionEstablishRej {
     int32 error_no = 1;
 }
 
+enum MessageType {
+    REQUEST = 0;
+    CONFIRM = 1;
+}
+
 message Request {
-    int32 procedure_id = 1;
-    bool need_confirm = 2;
-    string name = 3;
-    repeated string parameter = 4;
+    int32 message_number = 1;
+    int32 procedure_id = 2;
+    bool need_confirm = 3;
+    string name = 4;
+    repeated string parameter = 5;
 }
 
 message Confirm {
-    int32 procedure_id = 1;
-    string result = 2;
+    int32 message_number = 1;
+    int32 procedure_id = 2;
+    string result = 3;
 }
 
 
