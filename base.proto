@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package base;
+message ConnectionEstablishReq {
+    int32 version = 1;
+}
+
+message ConnectionEstablishCfm {
+}
+
+message ConnectionEstablishRej {
+    int32 error_no = 1;
+}
+
+message Request {
+    int32 procedure_id = 1;
+    bool need_confirm = 2;
+    string name = 3;
+    repeated string parameter = 4;
+}
+
+message Confirm {
+    int32 procedure_id = 1;
+    string result = 2;
+}
+
+
