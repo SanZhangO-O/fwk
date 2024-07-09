@@ -2,6 +2,7 @@
 #include <functional>
 #include <unordered_map>
 #include <map>
+#include <type_traits>
 
 #include <unistd.h>
 #include <sys/epoll.h>
@@ -16,6 +17,20 @@ namespace
 {
     constexpr int MAX_EVENTS = 10;
     constexpr int BUFFER_SIZE = 4096;
+}
+
+template <int I, typename... Args>
+typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
+setupTuple(std::tuple<Args...> &tuple, base::Request request)
+{
+}
+
+template <int I = 0, typename... Args>
+typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
+setupTuple(std::tuple<Args...> &tuple, base::Request request)
+{
+    std::get<I>(tuple) = request.parameter(I);
+    setupTuple<I + 1, Args...>(tuple, request);
 }
 
 namespace fwk
@@ -153,11 +168,9 @@ public:
                 {
                     info.state = StateE::WAITING_FOR_LENGTH;
                     handleMessage1(info.buffer.substr(0, info.length), address);
+                    std::cout << "Received Message O_O: " << info.buffer.substr(0, info.length) << std::endl;
                     info.buffer = info.buffer.substr(info.length);
                     info.length = 0;
-
-                    //
-                    std::cout << "Received Message O_O: " << message << std::endl;
                 }
                 else
                 {
@@ -178,14 +191,26 @@ public:
         std::cout << "handleMessage1 " << message.size() << std::endl;
         base::Request request;
         request.ParseFromString(message);
-        std::cout<<request.name()<<std::endl;
+        std::cout << request.name() << std::endl;
+        for (auto i = 0; i < request.parameter_size(); i++)
+        {
+            std::cout << request.parameter(i) << std::endl;
+        }
 
-        
+        auto callback = m_callbackMap[request.name()];
+        callback(request);
     }
 
-    void handleAAA(std::string s)
+    template <typename... Args>
+    void registerCallback(const std::string &name, std::function<void(Args...)> callback)
     {
-
+        auto newCallback = [callback](base::Request request)
+        {
+            std::tuple<Args...> parameterTuple;
+            setupTuple<0, Args...>(parameterTuple, request);
+            std::apply(callback, parameterTuple);
+        };
+        m_callbackMap[name] = newCallback;
     }
 
 private:
@@ -201,11 +226,17 @@ private:
         uint32_t length = 0;
     };
     std::map<uint32_t, Info> m_info;
+    std::map<std::string, std::function<void(base::Request)>> m_callbackMap;
 };
 
 int main()
 {
     TcpMessageHandler handler;
+    std::function<void(std::string, std::string)> callback = [](std::string a, std::string b)
+    {
+        std::cout << "First: " << a << " Second: " << b << std::endl;
+    };
+    handler.registerCallback("AAA", callback);
     TcpServer server(8080, std::bind(&TcpMessageHandler::handleMessage, &handler, std::placeholders::_1, std::placeholders::_2));
     server.run();
 

@@ -36,7 +36,9 @@ int main() {
     // 发送数据
     std::string msg;
     base::Request request;
-    request.set_name("AAABBB");
+    request.set_name("AAA");
+    request.add_parameter("P1");
+    request.add_parameter("P2");
     request.SerializeToString(&msg);
     wrapperSend(clientSocket, msg);
 
