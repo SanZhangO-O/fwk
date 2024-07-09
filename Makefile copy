@@ -1,8 +1,0 @@
-all:
-	protoc base.proto --cpp_out=./out
-	g++ -c ./out/base.pb.cc -o ./out/base.pb.o -lprotobuf
-	g++ -c ./rpc.cpp -o ./out/rpc.o -lprotobuf
-	g++ -c main.cpp -o ./out/main.o -lprotobuf
-	g++ ./out/base.pb.o ./out/rpc.o ./out/main.o -o a.out -lprotobuf
-	./a.out
-
