@@ -17,12 +17,31 @@ enum MessageType {
     CONFIRM = 1;
 }
 
+message BasicValueType {
+    oneof value {
+        bool bool_value = 1;
+        int32 int_value = 2;
+        string string_value = 3;
+    }
+}
+
+message ArrayValueType {
+    repeated BasicValueType value = 1;
+}
+
+message ParameterType {
+    oneof A {
+        BasicValueType basic_value = 1;
+        ArrayValueType array_value = 2;
+    }
+}
+
 message Request {
     int32 message_number = 1;
     int32 procedure_id = 2;
     bool need_confirm = 3;
     string name = 4;
-    repeated string parameter = 5;
+    repeated ParameterType parameter = 5;
 }
 
 message Confirm {

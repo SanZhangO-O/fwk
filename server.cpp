@@ -17,6 +17,28 @@ namespace
     constexpr int BUFFER_SIZE = 4096;
 }
 
+template<typename T, int I, typename... Args>
+void setupTuple_(std::tuple<Args...> &tuple, base::Request request, T)
+{
+    assert(false && "111");
+}
+
+template<int I, typename... Args>
+void setupTuple_(std::tuple<Args...> &tmutable_basic_valueuple, base::Request request, uint32_t value)
+{
+    auto parameter = request.parameter(I);
+    auto basicValue = parameter.mutable_basic_value();
+    std::get<I>(tuple) = basicValue->int_value();
+}
+
+template<int I, typename... Args>
+void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::string value)
+{
+    auto parameter = request.parameter(I);
+    auto basicValue = parameter.mutable_basic_value();
+    std::get<I>(tuple) = basicValue->string_value();
+}
+
 template <int I = 0, typename... Args>
 typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
 setupTuple(std::tuple<Args...> &tuple, base::Request request)
@@ -27,7 +49,16 @@ template <int I = 0, typename... Args>
 typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
 setupTuple(std::tuple<Args...> &tuple, base::Request request)
 {
-    std::get<I>(tuple) = request.parameter(I);
+    auto parameter = request.parameter(I);
+    if(parameter.has_basic_value())
+    {
+        using CurrentTy = decltype(std::get<I>(tuple));
+        setupTuple_<I>(tuple, request, std::get<I>(tuple));
+    }
+    else{
+        assert(false&&"2222");
+    }
+
     setupTuple<I + 1, Args...>(tuple, request);
 }
 
@@ -216,7 +247,7 @@ private:
 int main()
 {
     TcpMessageHandler handler;
-    std::function<void(const std::string&,const std::string&)> callback = [](const std::string& a,const std::string& b)
+    std::function<void(std::string ,int )> callback = [](std::string a,int b)
     {
         std::cout << "First: " << a << " Second: " << b << std::endl;
     };

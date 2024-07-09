@@ -5,6 +5,28 @@
 
 #include "out/base.pb.h"
 
+template<typename T>
+void setupParameter_(base::Request &request,T value)
+{
+    assert(false&&"1");
+}
+
+template<>
+void setupParameter_<int32_t>(base::Request &request, int32_t value)
+{
+    auto parameter = request.add_parameter();
+    auto basic_value = parameter->mutable_basic_value();
+    basic_value->set_int_value(value);
+}
+
+template<>
+void setupParameter_<std::string>(base::Request &request, std::string value)
+{
+    auto parameter = request.add_parameter();
+    auto basic_value = parameter->mutable_basic_value();
+    basic_value->set_string_value(value);
+}
+
 template <int I = 0, typename... Args>
 typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
 setupParameter(base::Request &request, std::tuple<Args...> tuple)
@@ -15,7 +37,8 @@ template <int I = 0, typename... Args>
 typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
 setupParameter(base::Request &request, std::tuple<Args...> tuple)
 {
-    request.add_parameter(std::get<I>(tuple));
+    setupParameter_(request, std::get<I>(tuple));
+
     setupParameter<I + 1>(request, tuple);
 }
 
@@ -54,7 +77,7 @@ int main()
         return -1;
     }
 
-    base::Request request = rpcCall("AAA", std::string("ABC"), std::string("DEF"));
+    base::Request request = rpcCall("AAA", std::string("ABC"), int(123));
     std::string msg;
     request.SerializeToString(&msg);
     wrapSend(clientSocket, msg);
