@@ -17,26 +17,52 @@ namespace
     constexpr int BUFFER_SIZE = 4096;
 }
 
-template<typename T, int I, typename... Args>
+template <typename T, int I, typename... Args>
 void setupTuple_(std::tuple<Args...> &tuple, base::Request request, T)
 {
-    assert(false && "111");
+    assert(false && "Type not supported!");
 }
 
-template<int I, typename... Args>
-void setupTuple_(std::tuple<Args...> &tmutable_basic_valueuple, base::Request request, uint32_t value)
+template <int I, typename... Args>
+void setupTuple_(std::tuple<Args...> &tuple, base::Request request, uint32_t value)
 {
     auto parameter = request.parameter(I);
     auto basicValue = parameter.mutable_basic_value();
     std::get<I>(tuple) = basicValue->int_value();
 }
 
-template<int I, typename... Args>
+template <int I, typename... Args>
 void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::string value)
 {
     auto parameter = request.parameter(I);
     auto basicValue = parameter.mutable_basic_value();
     std::get<I>(tuple) = basicValue->string_value();
+}
+
+template <int I, typename... Args>
+void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::vector<int> value)
+{
+    auto& v = std::get<I>(tuple);
+    auto parameter = request.parameter(I);
+    auto arrayValue = parameter.mutable_array_value();
+    v.resize(arrayValue->value_size());
+    for(auto i=0;i<arrayValue->value_size();i++)
+    {
+        v[i] = arrayValue->value(i).int_value();
+    }
+}
+
+template <int I, typename... Args>
+void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::vector<std::string> value)
+{
+    auto& v = std::get<I>(tuple);
+    auto parameter = request.parameter(I);
+    auto arrayValue = parameter.mutable_array_value();
+    v.resize(arrayValue->value_size());
+    for(auto i=0;i<arrayValue->value_size();i++)
+    {
+        v[i] = arrayValue->value(i).string_value();
+    }
 }
 
 template <int I = 0, typename... Args>
@@ -49,16 +75,7 @@ template <int I = 0, typename... Args>
 typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
 setupTuple(std::tuple<Args...> &tuple, base::Request request)
 {
-    auto parameter = request.parameter(I);
-    if(parameter.has_basic_value())
-    {
-        using CurrentTy = decltype(std::get<I>(tuple));
-        setupTuple_<I>(tuple, request, std::get<I>(tuple));
-    }
-    else{
-        assert(false&&"2222");
-    }
-
+    setupTuple_<I>(tuple, request, std::get<I>(tuple));
     setupTuple<I + 1, Args...>(tuple, request);
 }
 
@@ -247,9 +264,18 @@ private:
 int main()
 {
     TcpMessageHandler handler;
-    std::function<void(std::string ,int )> callback = [](std::string a,int b)
+    std::function<void(std::string, int, std::vector<int>, std::vector<std::string>)> callback = [](std::string a, int b, std::vector<int> c, std::vector<std::string> d)
     {
         std::cout << "First: " << a << " Second: " << b << std::endl;
+        std::cout << "Third: " << std::endl;
+        for (auto i : c)
+        {
+            std::cout << i << " " << std::endl;
+        }
+        for (auto i : d)
+        {
+            std::cout << i << " " << std::endl;
+        }
     };
     handler.registerCallback("AAA", callback);
     TcpServer server(8080, std::bind(&TcpMessageHandler::handleSocketData, &handler, std::placeholders::_1, std::placeholders::_2));
