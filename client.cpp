@@ -4,88 +4,13 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
+#include "O_O.hpp"
 #include "out/base.pb.h"
-
-template <typename T>
-void setupParameter_(base::Request &request, T value)
-{
-    assert(false && "1");
-}
-
-template <>
-void setupParameter_<int32_t>(base::Request &request, int32_t value)
-{
-    auto parameter = request.add_parameter();
-    auto basic_value = parameter->mutable_basic_value();
-    basic_value->set_int_value(value);
-}
-
-template <>
-void setupParameter_<std::string>(base::Request &request, std::string value)
-{
-    auto parameter = request.add_parameter();
-    auto basic_value = parameter->mutable_basic_value();
-    basic_value->set_string_value(value);
-}
-
-template <>
-void setupParameter_<std::vector<int>>(base::Request &request, std::vector<int> value)
-{
-    auto parameter = request.add_parameter();
-    auto array_value = parameter->mutable_array_value();
-    for (auto i : value)
-    {
-        auto v = array_value->add_value();
-        v->set_int_value(i);
-    }
-}
-
-template <>
-void setupParameter_<std::vector<std::string>>(base::Request &request, std::vector<std::string> value)
-{
-    auto parameter = request.add_parameter();
-    auto array_value = parameter->mutable_array_value();
-    for (auto i : value)
-    {
-        auto v = array_value->add_value();
-        v->set_string_value(i);
-    }
-}
-
-template <int I = 0, typename... Args>
-typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
-setupParameter(base::Request &request, std::tuple<Args...> tuple)
-{
-}
-
-template <int I = 0, typename... Args>
-typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
-setupParameter(base::Request &request, std::tuple<Args...> tuple)
-{
-    setupParameter_(request, std::get<I>(tuple));
-    setupParameter<I + 1>(request, tuple);
-}
-
-template <typename... Args>
-base::Request rpcCall(std::string name, Args... args)
-{
-    base::Request request;
-    request.set_name(name);
-    auto tuple = std::make_tuple(args...);
-    setupParameter<0, Args...>(request, tuple);
-    return request;
-}
-
-void wrapSend(int fd, const std::string &data)
-{
-    uint32_t length = data.size();
-    std::cout << "length " << length << std::endl;
-    send(fd, (char *)(&length), sizeof(uint32_t), 0);
-    send(fd, data.data(), data.size(), 0);
-}
 
 int main()
 {
+    using namespace O_O;
+
     int clientSocket = socket(AF_INET, SOCK_STREAM, 0);
 
     sockaddr_in serverAddress{};
@@ -101,10 +26,10 @@ int main()
         return -1;
     }
 
-    base::Request request = rpcCall("AAA", std::string("ABC"), int(123), std::vector<int>{1,2,3}, std::vector<std::string>{"DDD","EEE"});
+    base::Request request = rpcCall("AAA", std::string("ABC"), int(123), std::vector<int>{1, 2, 3}, std::vector<std::string>{"DDD", "EEE"}, true);
     std::string msg;
     request.SerializeToString(&msg);
-    wrapSend(clientSocket, msg);
+    O_O::sendWithLength(clientSocket, msg);
 
     close(clientSocket);
 

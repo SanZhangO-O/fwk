@@ -47,7 +47,7 @@ message Request {
 message Confirm {
     int32 message_number = 1;
     int32 procedure_id = 2;
-    string result = 3;
+    optional ParameterType result = 3;
 }
 
 
