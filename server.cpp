@@ -8,7 +8,7 @@
 int main()
 {
     O_O::RpcMessageHandler handler;
-    std::function<int(std::string, int, std::vector<int>, std::vector<std::string>, bool)> callback = [](std::string a, int b, std::vector<int> c, std::vector<std::string> d, bool e)
+    std::function<int(std::string, int, std::vector<int>, std::vector<std::string>, bool)> callbackAAA = [](std::string a, int b, std::vector<int> c, std::vector<std::string> d, bool e)
     {
         std::cout << "First: " << a << " Second: " << b << std::endl;
         std::cout << "Third: " << std::endl;
@@ -23,7 +23,14 @@ int main()
         std::cout << e << std::endl;
         return 123;
     };
-    handler.registerCallback("AAA", callback);
+    handler.registerCallback("AAA", callbackAAA);
+    std::function<std::vector<std::string>(void)> callbackBBB = []()
+    {
+        std::cout << "BBB Called" << std::endl;
+        return std::vector<std::string>{"AA","BB"};
+    };
+    handler.registerCallback("BBB", callbackBBB);
+
     O_O::TcpServer server(8080, std::bind(&O_O::RpcMessageHandler::handleSocketData, &handler, std::placeholders::_1, std::placeholders::_2), std::bind(&O_O::RpcMessageHandler::handleDisconnect, &handler, std::placeholders::_1));
     server.run();
 
