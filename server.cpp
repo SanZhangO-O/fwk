@@ -7,7 +7,7 @@
 
 int main()
 {
-    O_O::TcpMessageHandler handler;
+    O_O::RpcMessageHandler handler;
     std::function<int(std::string, int, std::vector<int>, std::vector<std::string>, bool)> callback = [](std::string a, int b, std::vector<int> c, std::vector<std::string> d, bool e)
     {
         std::cout << "First: " << a << " Second: " << b << std::endl;
@@ -24,7 +24,7 @@ int main()
         return 123;
     };
     handler.registerCallback("AAA", callback);
-    O_O::TcpServer server(8080, std::bind(&O_O::TcpMessageHandler::handleSocketData, &handler, std::placeholders::_1, std::placeholders::_2));
+    O_O::TcpServer server(8080, std::bind(&O_O::RpcMessageHandler::handleSocketData, &handler, std::placeholders::_1, std::placeholders::_2), std::bind(&O_O::RpcMessageHandler::handleDisconnect, &handler, std::placeholders::_1));
     server.run();
 
     return 0;

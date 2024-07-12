@@ -1,21 +1,6 @@
 syntax = "proto3";
 
 package base;
-message ConnectionEstablishReq {
-    int32 version = 1;
-}
-
-message ConnectionEstablishCfm {
-}
-
-message ConnectionEstablishRej {
-    int32 error_no = 1;
-}
-
-enum MessageType {
-    REQUEST = 0;
-    CONFIRM = 1;
-}
 
 message BasicValueType {
     oneof value {

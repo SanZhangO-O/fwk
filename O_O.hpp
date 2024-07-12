@@ -14,103 +14,19 @@
 
 namespace O_O
 {
-    void sendWithLength(int fd, const std::string &data)
-    {
-        uint32_t length = data.size();
-        send(fd, (char *)(&length), sizeof(uint32_t), 0);
-        send(fd, data.data(), data.size(), 0);
-    }
-
-    template <typename T, int I, typename... Args>
-    void setupTuple_(std::tuple<Args...> &tuple, base::Request request, T)
-    {
-        assert(false && "Type not supported!");
-    }
-
-    template <int I, typename... Args>
-    void setupTuple_(std::tuple<Args...> &tuple, base::Request request, bool value)
-    {
-        auto parameter = request.parameter(I);
-        auto basicValue = parameter.mutable_basic_value();
-        std::get<I>(tuple) = basicValue->bool_value();
-    }
-
-    template <int I, typename... Args>
-    void setupTuple_(std::tuple<Args...> &tuple, base::Request request, int value)
-    {
-        auto parameter = request.parameter(I);
-        auto basicValue = parameter.mutable_basic_value();
-        std::get<I>(tuple) = basicValue->int_value();
-    }
-
-    template <int I, typename... Args>
-    void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::string value)
-    {
-        auto parameter = request.parameter(I);
-        auto basicValue = parameter.mutable_basic_value();
-        std::get<I>(tuple) = basicValue->string_value();
-    }
-
-    template <int I, typename... Args>
-    void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::vector<bool> value)
-    {
-        auto &v = std::get<I>(tuple);
-        auto parameter = request.parameter(I);
-        auto arrayValue = parameter.mutable_array_value();
-        v.resize(arrayValue->value_size());
-        for (auto i = 0; i < arrayValue->value_size(); i++)
-        {
-            v[i] = arrayValue->value(i).bool_value();
-        }
-    }
-
-    template <int I, typename... Args>
-    void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::vector<int> value)
-    {
-        auto &v = std::get<I>(tuple);
-        auto parameter = request.parameter(I);
-        auto arrayValue = parameter.mutable_array_value();
-        v.resize(arrayValue->value_size());
-        for (auto i = 0; i < arrayValue->value_size(); i++)
-        {
-            v[i] = arrayValue->value(i).int_value();
-        }
-    }
-
-    template <int I, typename... Args>
-    void setupTuple_(std::tuple<Args...> &tuple, base::Request request, std::vector<std::string> value)
-    {
-        auto &v = std::get<I>(tuple);
-        auto parameter = request.parameter(I);
-        auto arrayValue = parameter.mutable_array_value();
-        v.resize(arrayValue->value_size());
-        for (auto i = 0; i < arrayValue->value_size(); i++)
-        {
-            v[i] = arrayValue->value(i).string_value();
-        }
-    }
-
-    template <int I = 0, typename... Args>
-    typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
-    setupTuple(std::tuple<Args...> &tuple, base::Request request)
-    {
-    }
-
-    template <int I = 0, typename... Args>
-    typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
-    setupTuple(std::tuple<Args...> &tuple, base::Request request)
-    {
-        setupTuple_<I>(tuple, request, std::get<I>(tuple));
-        setupTuple<I + 1, Args...>(tuple, request);
-    }
-
-    class TcpMessageHandler
+    class TcpMessagehandler
     {
     public:
-        void handleSocketData(const std::string &message, const uint32_t address)
+        static void sendWithLength(const int fd, const std::string &data)
         {
-            std::cout << "TcpMessageHandler::handleSocketData " << address << " " << message.size() << std::endl;
-            auto &info = m_info[address];
+            uint32_t length = data.size();
+            send(fd, (char *)(&length), sizeof(uint32_t), 0);
+            send(fd, data.data(), data.size(), 0);
+        }
+
+        void handleSocketData(const std::string &message, const int fd)
+        {
+            auto &info = m_info[fd];
             info.buffer += message;
             while (true)
             {
@@ -121,7 +37,6 @@ namespace O_O
                         info.length = (*(uint32_t *)(info.buffer.data()));
                         info.state = ParsingStateE::WAITING_FOR_DATA;
                         info.buffer = info.buffer.substr(4);
-                        std::cout << "Get length success: " << info.length << std::endl;
                     }
                     else
                     {
@@ -134,7 +49,7 @@ namespace O_O
                     if (info.buffer.size() >= info.length)
                     {
                         info.state = ParsingStateE::WAITING_FOR_LENGTH;
-                        handleMessage(info.buffer.substr(0, info.length), address);
+                        m_onMessageCallback(info.buffer.substr(0, info.length), fd);
                         info.buffer = info.buffer.substr(info.length);
                         info.length = 0;
                     }
@@ -147,22 +62,130 @@ namespace O_O
             }
         }
 
-        void handleDisconnect(const uint32_t address)
+        void handleDisconnect(const int fd)
         {
-            m_info.erase(address);
+            m_info.erase(fd);
         }
 
-        void handleMessage(std::string message, const uint32_t address)
+        std::function<void(std::string, int)> m_onMessageCallback;
+
+    private:
+        enum class ParsingStateE
+        {
+            WAITING_FOR_LENGTH,
+            WAITING_FOR_DATA
+        };
+        struct Info
+        {
+            std::string buffer;
+            ParsingStateE state = ParsingStateE::WAITING_FOR_LENGTH;
+            uint32_t length = 0;
+        };
+        std::map<int, Info> m_info;
+    };
+
+    class RpcMessageHandler : public TcpMessagehandler
+    {
+    public:
+        RpcMessageHandler()
+        {
+            TcpMessagehandler::m_onMessageCallback = std::bind(&RpcMessageHandler::handleMessage, this, std::placeholders::_1, std::placeholders::_2);
+        }
+
+        void handleMessage(const std::string &message, const int fd)
         {
             base::Request request;
             request.ParseFromString(message);
             auto callback = m_nameCallbackMap[request.name()];
-            callback(request);
+            callback(request, fd);
+        }
+
+        template <int I, typename... Args>
+        std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, bool>>
+        setupTuple_(std::tuple<Args...> &tuple, base::Request &request)
+        {
+            auto parameter = request.parameter(I);
+            auto basicValue = parameter.basic_value();
+            std::get<I>(tuple) = basicValue.bool_value();
+        }
+
+        template <int I, typename... Args>
+        std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, int>>
+        setupTuple_(std::tuple<Args...> &tuple, base::Request &request)
+        {
+            auto parameter = request.parameter(I);
+            auto basicValue = parameter.basic_value();
+            std::get<I>(tuple) = basicValue.int_value();
+        }
+
+        template <int I, typename... Args>
+        std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::string>>
+        setupTuple_(std::tuple<Args...> &tuple, base::Request &request)
+        {
+            auto parameter = request.parameter(I);
+            auto basicValue = parameter.basic_value();
+            std::get<I>(tuple) = basicValue.string_value();
+        }
+
+        template <int I, typename... Args>
+        std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::vector<bool>>>
+        setupTuple_(std::tuple<Args...> &tuple, base::Request &request)
+        {
+            auto &v = std::get<I>(tuple);
+            auto parameter = request.parameter(I);
+            auto arrayValue = parameter.array_value();
+            v.resize(arrayValue.value_size());
+            for (auto i = 0; i < arrayValue.value_size(); i++)
+            {
+                v[i] = arrayValue.value(i).bool_value();
+            }
+        }
+
+        template <int I, typename... Args>
+        std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::vector<int>>>
+        setupTuple_(std::tuple<Args...> &tuple, base::Request &request)
+        {
+            auto &v = std::get<I>(tuple);
+            auto parameter = request.parameter(I);
+            auto arrayValue = parameter.array_value();
+            v.resize(arrayValue.value_size());
+            for (auto i = 0; i < arrayValue.value_size(); i++)
+            {
+                v[i] = arrayValue.value(i).int_value();
+            }
+        }
+
+        template <int I, typename... Args>
+        std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::vector<std::string>>>
+        setupTuple_(std::tuple<Args...> &tuple, base::Request &request)
+        {
+            auto &v = std::get<I>(tuple);
+            auto parameter = request.parameter(I);
+            auto arrayValue = parameter.array_value();
+            v.resize(arrayValue.value_size());
+            for (auto i = 0; i < arrayValue.value_size(); i++)
+            {
+                v[i] = arrayValue.value(i).string_value();
+            }
+        }
+
+        template <int I = 0, typename... Args>
+        typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
+        setupTuple(std::tuple<Args...> &tuple, base::Request &request)
+        {
+        }
+
+        template <int I = 0, typename... Args>
+        typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
+        setupTuple(std::tuple<Args...> &tuple, base::Request &request)
+        {
+            setupTuple_<I>(tuple, request);
+            setupTuple<I + 1, Args...>(tuple, request);
         }
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<std::is_same_v<ReturnType, void>, std::string>
-        assemblyReturnMessage(CallbackType callback, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
         {
             std::apply(callback, parameterTuple);
 
@@ -177,7 +200,7 @@ namespace O_O
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<std::is_same_v<ReturnType, bool>, std::string>
-        assemblyReturnMessage(CallbackType callback, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
         {
             bool result = std::apply(callback, parameterTuple);
             base::Confirm confirm;
@@ -195,7 +218,7 @@ namespace O_O
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<std::is_same_v<ReturnType, int>, std::string>
-        assemblyReturnMessage(CallbackType callback, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
         {
             int result = std::apply(callback, parameterTuple);
             base::Confirm confirm;
@@ -213,7 +236,7 @@ namespace O_O
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<std::is_same_v<ReturnType, std::string>, std::string>
-        assemblyReturnMessage(CallbackType callback, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
         {
             std::string result = std::apply(callback, parameterTuple);
             base::Confirm confirm;
@@ -232,29 +255,18 @@ namespace O_O
         template <typename ReturnType, typename... Args>
         void registerCallback(const std::string &name, std::function<ReturnType(Args...)> callback)
         {
-            auto newCallback = [this, callback](base::Request request)
+            auto newCallback = [this, callback](base::Request request, int fd)
             {
                 std::tuple<std::decay_t<Args>...> parameterTuple;
                 setupTuple<0, std::decay_t<Args>...>(parameterTuple, request);
-                auto resultData = assemblyReturnMessage<ReturnType, decltype(callback), decltype(parameterTuple)>(callback, parameterTuple);
+                auto resultData = applyAndGetReturnMessage<ReturnType, decltype(callback), decltype(parameterTuple)>(callback, parameterTuple);
+                sendWithLength(fd, resultData);
             };
             m_nameCallbackMap[name] = newCallback;
         }
 
     private:
-        enum class ParsingStateE
-        {
-            WAITING_FOR_LENGTH,
-            WAITING_FOR_DATA
-        };
-        struct Info
-        {
-            std::string buffer;
-            ParsingStateE state = ParsingStateE::WAITING_FOR_LENGTH;
-            uint32_t length = 0;
-        };
-        std::map<uint32_t, Info> m_info;
-        std::map<std::string, std::function<void(base::Request)>> m_nameCallbackMap;
+        std::map<std::string, std::function<void(base::Request, int)>> m_nameCallbackMap;
     };
 
     namespace
@@ -266,9 +278,10 @@ namespace O_O
     class TcpServer
     {
     public:
-        TcpServer(uint32_t port, std::function<void(const std::string &data, uint32_t)> func)
+        TcpServer(int port, std::function<void(const std::string &data, int)> func, std::function<void(int)> disconnectedFunc)
         {
             m_procFunc = func;
+            m_disconnectedFunc = disconnectedFunc;
 
             m_serverSocket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -330,13 +343,14 @@ namespace O_O
                         close(m_events[i].data.fd);
                         std::cout << "Client disconnected" << std::endl;
                         m_socketFdAddressMap.erase(m_events[i].data.fd);
+                        m_disconnectedFunc(m_events[i].data.fd);
                     }
                     else
                     {
                         std::string newString;
                         newString.resize(bytesRead);
                         std::copy_n(std::begin(buffer), bytesRead, newString.begin());
-                        m_procFunc(newString, m_socketFdAddressMap[m_events[i].data.fd].sin_addr.s_addr);
+                        m_procFunc(newString, m_events[i].data.fd);
                     }
                 }
             }
@@ -357,12 +371,12 @@ namespace O_O
         int m_serverSocket = 0;
         int m_epollFd = 0;
         int m_numEvents = 0;
-        std::function<void(const std::string &data, uint32_t)> m_procFunc;
-        std::map<uint32_t, sockaddr_in> m_socketFdAddressMap;
+        std::function<void(const std::string &data, int)> m_procFunc;
+        std::function<void(int)> m_disconnectedFunc;
+        std::map<int, sockaddr_in> m_socketFdAddressMap;
     };
 
     // Client
-
     template <typename T>
     void setupParameter_(base::Request &request, T value)
     {
@@ -453,4 +467,89 @@ namespace O_O
         return request;
     }
 
+    class RpcClient
+    {
+    public:
+        RpcClient(const std::string &address, const uint16_t port) : m_address(address), m_port(port)
+        {
+        }
+        ~RpcClient()
+        {
+            if (m_socket != 0)
+            {
+                close(m_socket);
+            }
+        }
+
+        bool start()
+        {
+            assert(m_socket == 0);
+            m_socket = socket(AF_INET, SOCK_STREAM, 0);
+
+            sockaddr_in serverAddress{};
+            serverAddress.sin_family = AF_INET;
+            serverAddress.sin_port = htons(m_port);
+            if (inet_pton(AF_INET, m_address.data(), &(serverAddress.sin_addr)) <= 0)
+            {
+                return false;
+            }
+
+            if (connect(m_socket, reinterpret_cast<struct sockaddr *>(&serverAddress), sizeof(serverAddress)) < 0)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        void stop()
+        {
+            close(m_socket);
+        }
+
+        template <typename T, typename... Args>
+        T rpcCall(std::string name, Args... args)
+        {
+            T rt;
+
+            base::Request request;
+            request.set_name(name);
+            auto tuple = std::make_tuple(args...);
+            setupParameter<0, Args...>(request, tuple);
+            
+            std::string msg;
+            request.SerializeToString(&msg);
+            TcpMessagehandler::sendWithLength(m_socket, msg);
+
+            bool received = false;
+            TcpMessagehandler tcpMessagehandler;
+            tcpMessagehandler.m_onMessageCallback = [&received, &rt](std::string rcvdData, int f)
+            {
+                received = true;
+
+                base::Confirm confirm;
+                confirm.ParseFromString(rcvdData);
+                auto result = confirm.result();
+
+                // TODO: 
+                auto intValue = result.basic_value().int_value();
+                rt = intValue;
+            };
+
+            while(!received)
+            {
+                char recvBuffer[4096];
+                auto recvDataSize = read(m_socket, recvBuffer, 4096);
+                std::string newString;
+                newString.resize(recvDataSize);
+                std::copy_n(std::begin(recvBuffer), recvDataSize, newString.begin());
+                tcpMessagehandler.handleSocketData(newString, m_socket);
+            }
+            return rt;
+        }
+
+    private:
+        std::string m_address;
+        uint16_t m_port;
+        int m_socket = 0;
+    };
 }
