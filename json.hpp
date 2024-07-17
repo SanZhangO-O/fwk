@@ -84,19 +84,25 @@ namespace O_O
     std::enable_if_t<std::is_same_v<std::string, T>>
     serializeElement(std::string &result, const T &t)
     {
+        std::cout<<"ZQR1 "<< t <<std::endl;
         result += "\"";
-        for (auto i : t)
+        for (auto i = 0; i < t.size(); i++)
         {
-            if (i == '\"')
+            if (t[i] == '\"')
             {
                 result += "\\\"";
             }
+            else if (t[i] == '\\')
+            {
+                result += "\\\\";
+            }
             else
             {
-                result += i;
+                result += t[i];
             }
         }
         result += "\"";
+        std::cout<<"ZQR2 "<< result <<std::endl;
     }
 
     template <typename T>
@@ -213,7 +219,12 @@ namespace O_O
             if (jsonData[endIndex] == '\\' && jsonData[endIndex + 1] == '\"')
             {
                 temp += "\"";
-                endIndex+=2;
+                endIndex += 2;
+            }
+            else if (jsonData[endIndex] == '\\' && jsonData[endIndex + 1] == '\\')
+            {
+                temp += "\\";
+                endIndex += 2;
             }
             else
             {
