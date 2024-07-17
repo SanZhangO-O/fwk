@@ -1,6 +1,6 @@
 #pragma once
 
-#include "out/base.pb.h"
+#include "json.hpp"
 
 #include <sys/socket.h>
 #include <sys/epoll.h>
@@ -11,73 +11,10 @@
 #include <functional>
 #include <string>
 #include <map>
+#include <cassert>
 
 namespace O_O
 {
-
-    template <int I, typename... Args>
-    std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, bool>>
-    setupTuple_(std::tuple<Args...> &tuple, const base::ParameterType &parameter)
-    {
-        auto basicValue = parameter.basic_value();
-        std::get<I>(tuple) = basicValue.bool_value();
-    }
-
-    template <int I, typename... Args>
-    std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, int>>
-    setupTuple_(std::tuple<Args...> &tuple, const base::ParameterType &parameter)
-    {
-        auto basicValue = parameter.basic_value();
-        std::get<I>(tuple) = basicValue.int_value();
-    }
-
-    template <int I, typename... Args>
-    std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::string>>
-    setupTuple_(std::tuple<Args...> &tuple, const base::ParameterType &parameter)
-    {
-        auto basicValue = parameter.basic_value();
-        std::get<I>(tuple) = basicValue.string_value();
-    }
-
-    template <int I, typename... Args>
-    std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::vector<bool>>>
-    setupTuple_(std::tuple<Args...> &tuple, const base::ParameterType &parameter)
-    {
-        auto &v = std::get<I>(tuple);
-        auto arrayValue = parameter.array_value();
-        v.resize(arrayValue.value_size());
-        for (auto i = 0; i < arrayValue.value_size(); i++)
-        {
-            v[i] = arrayValue.value(i).bool_value();
-        }
-    }
-
-    template <int I, typename... Args>
-    std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::vector<int>>>
-    setupTuple_(std::tuple<Args...> &tuple, const base::ParameterType &parameter)
-    {
-        auto &v = std::get<I>(tuple);
-        auto arrayValue = parameter.array_value();
-        v.resize(arrayValue.value_size());
-        for (auto i = 0; i < arrayValue.value_size(); i++)
-        {
-            v[i] = arrayValue.value(i).int_value();
-        }
-    }
-
-    template <int I, typename... Args>
-    std::enable_if_t<std::is_same_v<std::tuple_element_t<I, std::tuple<Args...>>, std::vector<std::string>>>
-    setupTuple_(std::tuple<Args...> &tuple, const base::ParameterType &parameter)
-    {
-        auto &v = std::get<I>(tuple);
-        auto arrayValue = parameter.array_value();
-        v.resize(arrayValue.value_size());
-        for (auto i = 0; i < arrayValue.value_size(); i++)
-        {
-            v[i] = arrayValue.value(i).string_value();
-        }
-    }
-
     class TcpMessagehandler
     {
     public:
@@ -158,25 +95,14 @@ namespace O_O
 
         void handleMessage(const std::string &message, const int fd)
         {
-            base::Request request;
-            request.ParseFromString(message);
-            auto callback = m_nameCallbackMap[request.name()];
-            callback(request, fd);
-        }
+            int index = 0;
+            std::string funcName;
+            std::string parameterString;
+            decode(message, index, funcName, parameterString);
 
-        template <int I = 0, typename... Args>
-        typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
-        setupTuple(std::tuple<Args...> &tuple, base::Request &request)
-        {
-        }
-
-        template <int I = 0, typename... Args>
-        typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
-        setupTuple(std::tuple<Args...> &tuple, base::Request &request)
-        {
-            auto parameter = request.parameter(I);
-            setupTuple_<I>(tuple, parameter);
-            setupTuple<I + 1, Args...>(tuple, request);
+            std::cout << "funcname " << funcName << " " << parameterString << std::endl;
+            auto callback = m_nameCallbackMap[funcName];
+            callback(parameterString, fd);
         }
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
@@ -184,143 +110,29 @@ namespace O_O
         applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
         {
             std::apply(callback, parameterTuple);
-
-            base::Confirm confirm;
-            base::ParameterType *resultValue = new base::ParameterType;
-            confirm.set_allocated_result(resultValue);
-
-            std::string str;
-            confirm.SerializeToString(&str);
-            return str;
+            auto dataToSend = encode(true);
+            return dataToSend;
         }
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
-        std::enable_if_t<std::is_same_v<ReturnType, bool>, std::string>
+        std::enable_if_t<!std::is_same_v<ReturnType, void>, std::string>
         applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
         {
-            bool result = std::apply(callback, parameterTuple);
-            base::Confirm confirm;
-
-            base::ParameterType *resultValue = new base::ParameterType;
-            base::BasicValueType *basicValue = new base::BasicValueType;
-            basicValue->set_bool_value(result);
-            resultValue->set_allocated_basic_value(basicValue);
-            confirm.set_allocated_result(resultValue);
-
-            std::string str;
-            confirm.SerializeToString(&str);
-            return str;
-        }
-
-        template <typename ReturnType, typename CallbackType, typename tupleType>
-        std::enable_if_t<std::is_same_v<ReturnType, int>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
-        {
-            int result = std::apply(callback, parameterTuple);
-            base::Confirm confirm;
-
-            base::ParameterType *resultValue = new base::ParameterType;
-            base::BasicValueType *basicValue = new base::BasicValueType;
-            basicValue->set_int_value(result);
-            resultValue->set_allocated_basic_value(basicValue);
-            confirm.set_allocated_result(resultValue);
-
-            std::string str;
-            confirm.SerializeToString(&str);
-            return str;
-        }
-
-        template <typename ReturnType, typename CallbackType, typename tupleType>
-        std::enable_if_t<std::is_same_v<ReturnType, std::string>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
-        {
-            std::string result = std::apply(callback, parameterTuple);
-            base::Confirm confirm;
-
-            base::ParameterType *resultValue = new base::ParameterType;
-            base::BasicValueType *basicValue = new base::BasicValueType;
-            basicValue->set_string_value(result);
-            resultValue->set_allocated_basic_value(basicValue);
-            confirm.set_allocated_result(resultValue);
-
-            std::string str;
-            confirm.SerializeToString(&str);
-            return str;
-        }
-
-        template <typename ReturnType, typename CallbackType, typename tupleType>
-        std::enable_if_t<std::is_same_v<ReturnType, std::vector<std::string>>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
-        {
-            std::vector<std::string> result = std::apply(callback, parameterTuple);
-            base::Confirm confirm;
-
-            base::ParameterType *resultValue = new base::ParameterType;
-            base::ArrayValueType *arrayValue = new base::ArrayValueType;
-            for (auto i = 0; i < result.size(); i++)
-            {
-                auto value = arrayValue->add_value();
-                value->set_string_value(result[i]);
-            }
-            resultValue->set_allocated_array_value(arrayValue);
-            confirm.set_allocated_result(resultValue);
-
-            std::string str;
-            confirm.SerializeToString(&str);
-            return str;
-        }
-
-        template <typename ReturnType, typename CallbackType, typename tupleType>
-        std::enable_if_t<std::is_same_v<ReturnType, std::vector<bool>>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
-        {
-            std::vector<bool> result = std::apply(callback, parameterTuple);
-            base::Confirm confirm;
-
-            base::ParameterType *resultValue = new base::ParameterType;
-            base::ArrayValueType *arrayValue = new base::ArrayValueType;
-            for (auto i = 0; i < result.size(); i++)
-            {
-                auto value = arrayValue->add_value();
-                value->set_bool_value(result[i]);
-            }
-            resultValue->set_allocated_array_value(arrayValue);
-            confirm.set_allocated_result(resultValue);
-
-            std::string str;
-            confirm.SerializeToString(&str);
-            return str;
-        }
-
-        template <typename ReturnType, typename CallbackType, typename tupleType>
-        std::enable_if_t<std::is_same_v<ReturnType, std::vector<int>>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
-        {
-            std::vector<int> result = std::apply(callback, parameterTuple);
-            base::Confirm confirm;
-
-            base::ParameterType *resultValue = new base::ParameterType;
-            base::ArrayValueType *arrayValue = new base::ArrayValueType;
-            for (auto i = 0; i < result.size(); i++)
-            {
-                auto value = arrayValue->add_value();
-                value->set_int_value(result[i]);
-            }
-            resultValue->set_allocated_array_value(arrayValue);
-            confirm.set_allocated_result(resultValue);
-
-            std::string str;
-            confirm.SerializeToString(&str);
-            return str;
+            auto result = std::apply(callback, parameterTuple);
+            auto dataToSend = encode(true, result);
+            std::cout<<"applyAndGetReturnMessage "<<dataToSend<<std::endl;
+            return dataToSend;
         }
 
         template <typename ReturnType, typename... Args>
         void registerCallback(const std::string &name, std::function<ReturnType(Args...)> callback)
         {
-            auto newCallback = [this, callback](base::Request request, int fd)
+            auto newCallback = [this, callback](std::string message, int fd)
             {
+                std::cout<< "registerCallback message "<<message<<std::endl;
+                int index = 0;
                 std::tuple<std::decay_t<Args>...> parameterTuple;
-                setupTuple<0, std::decay_t<Args>...>(parameterTuple, request);
+                deserializeElement(message, index, parameterTuple);
                 auto resultData = applyAndGetReturnMessage<ReturnType, decltype(callback), decltype(parameterTuple)>(callback, parameterTuple);
                 sendWithLength(fd, resultData);
             };
@@ -328,7 +140,7 @@ namespace O_O
         }
 
     private:
-        std::map<std::string, std::function<void(base::Request, int)>> m_nameCallbackMap;
+        std::map<std::string, std::function<void(std::string, int)>> m_nameCallbackMap;
     };
 
     namespace
@@ -439,96 +251,6 @@ namespace O_O
     };
 
     // Client
-    template <typename T>
-    void setupParameter_(base::Request &request, T value)
-    {
-        assert(false && "1");
-    }
-
-    template <>
-    void setupParameter_<bool>(base::Request &request, bool value)
-    {
-        auto parameter = request.add_parameter();
-        auto basic_value = parameter->mutable_basic_value();
-        basic_value->set_bool_value(value);
-    }
-
-    template <>
-    void setupParameter_<int32_t>(base::Request &request, int32_t value)
-    {
-        auto parameter = request.add_parameter();
-        auto basic_value = parameter->mutable_basic_value();
-        basic_value->set_int_value(value);
-    }
-
-    template <>
-    void setupParameter_<std::string>(base::Request &request, std::string value)
-    {
-        auto parameter = request.add_parameter();
-        auto basic_value = parameter->mutable_basic_value();
-        basic_value->set_string_value(value);
-    }
-
-    template <>
-    void setupParameter_<std::vector<bool>>(base::Request &request, std::vector<bool> value)
-    {
-        auto parameter = request.add_parameter();
-        auto array_value = parameter->mutable_array_value();
-        for (auto i : value)
-        {
-            auto v = array_value->add_value();
-            v->set_bool_value(i);
-        }
-    }
-
-    template <>
-    void setupParameter_<std::vector<int>>(base::Request &request, std::vector<int> value)
-    {
-        auto parameter = request.add_parameter();
-        auto array_value = parameter->mutable_array_value();
-        for (auto i : value)
-        {
-            auto v = array_value->add_value();
-            v->set_int_value(i);
-        }
-    }
-
-    template <>
-    void setupParameter_<std::vector<std::string>>(base::Request &request, std::vector<std::string> value)
-    {
-        auto parameter = request.add_parameter();
-        auto array_value = parameter->mutable_array_value();
-        for (auto i : value)
-        {
-            auto v = array_value->add_value();
-            v->set_string_value(i);
-        }
-    }
-
-    template <int I = 0, typename... Args>
-    typename std::enable_if_t<I == std::tuple_size_v<std::tuple<Args...>>>
-    setupParameter(base::Request &request, std::tuple<Args...> tuple)
-    {
-    }
-
-    template <int I = 0, typename... Args>
-    typename std::enable_if_t<I != std::tuple_size_v<std::tuple<Args...>>>
-    setupParameter(base::Request &request, std::tuple<Args...> tuple)
-    {
-        setupParameter_(request, std::get<I>(tuple));
-        setupParameter<I + 1>(request, tuple);
-    }
-
-    template <typename... Args>
-    base::Request rpcCall(std::string name, Args... args)
-    {
-        base::Request request;
-        request.set_name(name);
-        auto tuple = std::make_tuple(args...);
-        setupParameter<0, Args...>(request, tuple);
-        return request;
-    }
-
     class RpcClient
     {
     public:
@@ -572,29 +294,20 @@ namespace O_O
         T rpcCall(std::string name, Args... args)
         {
             T rt;
-
-            base::Request request;
-            request.set_name(name);
-            auto tuple = std::make_tuple(args...);
-            setupParameter<0, Args...>(request, tuple);
-
-            std::string msg;
-            request.SerializeToString(&msg);
-            TcpMessagehandler::sendWithLength(m_socket, msg);
+            std::string parameterString;
+            serializeElement(parameterString, std::make_tuple(args...));
+            auto dataToSend = encode(name, parameterString);
+            std::cout << "client dataToSend " << dataToSend << std::endl;
+            TcpMessagehandler::sendWithLength(m_socket, dataToSend);
 
             bool received = false;
             TcpMessagehandler tcpMessagehandler;
             tcpMessagehandler.m_onMessageCallback = [&received, &rt](std::string rcvdData, int f)
             {
                 received = true;
-
-                base::Confirm confirm;
-                confirm.ParseFromString(rcvdData);
-                auto result = confirm.result();
-
-                std::tuple<T> tuple_;
-                setupTuple_<0>(tuple_, result);
-                rt = std::get<0>(tuple_);
+                int index=0;
+                bool isSuccess;
+                decode(rcvdData, index, isSuccess, rt);
             };
 
             while (!received)
