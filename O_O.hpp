@@ -96,47 +96,48 @@ namespace O_O
         void handleMessage(const std::string &message, const int fd)
         {
             int index = 0;
+            int procedureIndex = 0;
             std::string funcName;
             std::string parameterString;
-            decode(message, index, funcName, parameterString);
+            decode(message, index, funcName, procedureIndex, parameterString);
             auto callback = m_nameCallbackMap[funcName];
-            callback(parameterString, fd);
+            callback(parameterString, procedureIndex, fd);
         }
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<std::is_same_v<ReturnType, void>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, int procedureId, tupleType parameterTuple)
         {
             std::apply(callback, parameterTuple);
-            auto dataToSend = encode(true);
+            auto dataToSend = encode(true, procedureId);
             return dataToSend;
         }
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<!std::is_same_v<ReturnType, void>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, int procedureId, tupleType parameterTuple)
         {
             auto result = std::apply(callback, parameterTuple);
-            auto dataToSend = encode(true, result);
+            auto dataToSend = encode(true, procedureId, result);
             return dataToSend;
         }
 
         template <typename ReturnType, typename... Args>
         void registerCallback(const std::string &name, std::function<ReturnType(Args...)> callback)
         {
-            auto newCallback = [this, callback](std::string message, int fd)
+            auto newCallback = [this, callback](std::string message, int procedureId, int fd)
             {
                 int index = 0;
                 std::tuple<std::decay_t<Args>...> parameterTuple;
                 deserializeElement(message, index, parameterTuple);
-                auto resultData = applyAndGetReturnMessage<ReturnType, decltype(callback), decltype(parameterTuple)>(callback, parameterTuple);
+                auto resultData = applyAndGetReturnMessage<ReturnType, decltype(callback), decltype(parameterTuple)>(callback, procedureId, parameterTuple);
                 sendWithLength(fd, resultData);
             };
             m_nameCallbackMap[name] = newCallback;
         }
 
     private:
-        std::map<std::string, std::function<void(std::string, int)>> m_nameCallbackMap;
+        std::map<std::string, std::function<void(std::string, int, int)>> m_nameCallbackMap;
     };
 
     namespace
@@ -290,19 +291,24 @@ namespace O_O
         T rpcCall(std::string name, Args... args)
         {
             T rt;
+            int procedureId = m_procedureId++;
             std::string parameterString;
             serializeElement(parameterString, std::make_tuple(args...));
-            auto dataToSend = encode(name, parameterString);
+            auto dataToSend = encode(name, procedureId, parameterString);
             TcpMessagehandler::sendWithLength(m_socket, dataToSend);
 
             bool received = false;
             TcpMessagehandler tcpMessagehandler;
-            tcpMessagehandler.m_onMessageCallback = [&received, &rt](std::string rcvdData, int f)
+            tcpMessagehandler.m_onMessageCallback = [&received, procedureId, &rt](std::string rcvdData, int f)
             {
-                received = true;
-                int index=0;
+                int receivedProcedureId = 0;
+                int index = 0;
                 bool isSuccess;
-                decode(rcvdData, index, isSuccess, rt);
+                decode(rcvdData, index, isSuccess, receivedProcedureId, rt);
+                if (procedureId == receivedProcedureId)
+                {
+                    received = true;
+                }
             };
 
             while (!received)
@@ -321,5 +327,6 @@ namespace O_O
         std::string m_address;
         uint16_t m_port;
         int m_socket = 0;
+        int m_procedureId = 1;
     };
 }

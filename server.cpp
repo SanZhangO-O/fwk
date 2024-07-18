@@ -20,6 +20,7 @@ int main()
     {
         std::cout << "BBB Called" << std::endl;
         std::cout << struct2.struct1.i << " " << struct2.struct1.s << " " << struct2.ss << std::endl;
+        return false;
     };
     handler.registerCallback("BBB", callbackBBB);
 
