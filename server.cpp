@@ -4,20 +4,22 @@
 #include <vector>
 
 #include "O_O.hpp"
+#include "defs.hpp"
 
 int main()
 {
     O_O::RpcMessageHandler handler;
     std::function<int(std::string, int)> callbackAAA = [](std::string a, int b)
     {
+        std::cout << "BBB Called" << std::endl;
         std::cout << "First: " << a << " Second: " << b << std::endl;
         return 123;
     };
     handler.registerCallback("AAA", callbackAAA);
-    std::function<std::vector<std::string>(void)> callbackBBB = []()
+    std::function<bool(Struct2)> callbackBBB = [](Struct2 struct2)
     {
         std::cout << "BBB Called" << std::endl;
-        return std::vector<std::string>{"AA","BB"};
+        std::cout << struct2.struct1.i << " " << struct2.struct1.s << " " << struct2.ss << std::endl;
     };
     handler.registerCallback("BBB", callbackBBB);
 

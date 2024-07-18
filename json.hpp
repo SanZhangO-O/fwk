@@ -84,7 +84,6 @@ namespace O_O
     std::enable_if_t<std::is_same_v<std::string, T>>
     serializeElement(std::string &result, const T &t)
     {
-        std::cout<<"ZQR1 "<< t <<std::endl;
         result += "\"";
         for (auto i = 0; i < t.size(); i++)
         {
@@ -102,7 +101,6 @@ namespace O_O
             }
         }
         result += "\"";
-        std::cout<<"ZQR2 "<< result <<std::endl;
     }
 
     template <typename T>

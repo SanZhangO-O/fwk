@@ -99,8 +99,6 @@ namespace O_O
             std::string funcName;
             std::string parameterString;
             decode(message, index, funcName, parameterString);
-
-            std::cout << "funcname " << funcName << " " << parameterString << std::endl;
             auto callback = m_nameCallbackMap[funcName];
             callback(parameterString, fd);
         }
@@ -120,7 +118,6 @@ namespace O_O
         {
             auto result = std::apply(callback, parameterTuple);
             auto dataToSend = encode(true, result);
-            std::cout<<"applyAndGetReturnMessage "<<dataToSend<<std::endl;
             return dataToSend;
         }
 
@@ -129,7 +126,6 @@ namespace O_O
         {
             auto newCallback = [this, callback](std::string message, int fd)
             {
-                std::cout<< "registerCallback message "<<message<<std::endl;
                 int index = 0;
                 std::tuple<std::decay_t<Args>...> parameterTuple;
                 deserializeElement(message, index, parameterTuple);
@@ -297,7 +293,6 @@ namespace O_O
             std::string parameterString;
             serializeElement(parameterString, std::make_tuple(args...));
             auto dataToSend = encode(name, parameterString);
-            std::cout << "client dataToSend " << dataToSend << std::endl;
             TcpMessagehandler::sendWithLength(m_socket, dataToSend);
 
             bool received = false;

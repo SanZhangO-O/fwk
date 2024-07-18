@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 
 #include "O_O.hpp"
+#include "defs.hpp"
 
 int main()
 {
@@ -15,12 +16,14 @@ int main()
         auto rt = client.rpcCall<int>("AAA", std::string("ABC\\"), int(123));
         std::cout << rt << std::endl;
     }
-    // {
-    //     auto rt = client.rpcCall<std::vector<std::string>>("BBB");
-    //     for (auto i : rt)
-    //     {
-    //         std::cout << i << std::endl;
-    //     }
-    // }
+    {
+        Struct2 struct2;
+        struct2.struct1.i = 123;
+        struct2.struct1.s = "ABC";
+        struct2.ss = "DEF";
+
+        bool rt = client.rpcCall<bool>("BBB", struct2);
+        std::cout<<"B rt "<<rt<<std::endl;
+    }
     return 0;
 }
