@@ -5,8 +5,11 @@
 #include <sys/socket.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
-#include <unistd.h>
 
+#include <future>
+#include <unistd.h>
+#include <thread>
+#include <memory>
 #include <type_traits>
 #include <functional>
 #include <string>
@@ -109,7 +112,7 @@ namespace O_O
         applyAndGetReturnMessage(CallbackType callback, int procedureId, tupleType parameterTuple)
         {
             std::apply(callback, parameterTuple);
-            auto dataToSend = encode(true, procedureId);
+            auto dataToSend = encode(true, procedureId, std::string());
             return dataToSend;
         }
 
@@ -118,7 +121,9 @@ namespace O_O
         applyAndGetReturnMessage(CallbackType callback, int procedureId, tupleType parameterTuple)
         {
             auto result = std::apply(callback, parameterTuple);
-            auto dataToSend = encode(true, procedureId, result);
+            std::string rtString;
+            serializeElement(rtString, result);
+            auto dataToSend = encode(true, procedureId, rtString);
             return dataToSend;
         }
 
@@ -260,6 +265,10 @@ namespace O_O
             {
                 close(m_socket);
             }
+            if (m_epollFd != 0)
+            {
+                close(m_epollFd);
+            }
         }
 
         bool start()
@@ -279,6 +288,57 @@ namespace O_O
             {
                 return false;
             }
+
+            m_epollFd = epoll_create1(0);
+
+            epoll_event event{};
+            event.events = EPOLLIN;
+            event.data.fd = m_socket;
+            epoll_ctl(m_epollFd, EPOLL_CTL_ADD, m_socket, &event);
+
+            m_thread = std::make_unique<std::thread>([this]()
+                                                     {
+                                                         TcpMessagehandler tcpMessagehandler;
+                                                         tcpMessagehandler.m_onMessageCallback = [this](const std::string &data, int fd)
+                                                         {
+                                                             int receivedProcedureId = 0;
+                                                             int index = 0;
+                                                             bool isSuccess;
+                                                             std::string returnValueString;
+                                                             decode(data, index, isSuccess, receivedProcedureId, returnValueString);
+                                                             auto callback = m_callbacks[receivedProcedureId];
+                                                             callback(returnValueString);
+                                                         };
+                                                         epoll_event events[MAX_EVENTS];
+                                                         char buffer[BUFFER_SIZE];
+
+                                                         while (true)
+                                                         {
+                                                             auto numEvents = epoll_wait(m_epollFd, events, MAX_EVENTS, -1);
+
+                                                             for (int i = 0; i < numEvents; i++)
+                                                             {
+                                                                 if (events[i].data.fd == m_socket)
+                                                                 {
+                                                                     int bytesRead = read(events[i].data.fd, buffer, sizeof(buffer) - 1);
+                                                                     if (bytesRead <= 0)
+                                                                     {
+                                                                         epoll_ctl(m_epollFd, EPOLL_CTL_DEL, events[i].data.fd, nullptr);
+                                                                         close(events[i].data.fd);
+                                                                         std::cout << "Client disconnected" << std::endl;
+                                                                     }
+                                                                     else
+                                                                     {
+                                                                         std::string newString;
+                                                                         newString.resize(bytesRead);
+                                                                         std::copy_n(std::begin(buffer), bytesRead, newString.begin());
+                                                                         std::cout << "Recv data" << std::endl;
+                                                                         tcpMessagehandler.handleSocketData(newString, m_socket);
+                                                                     }
+                                                                 }
+                                                             }
+                                                         } });
+            m_thread->detach();
             return true;
         }
 
@@ -290,43 +350,40 @@ namespace O_O
         template <typename T, typename... Args>
         T rpcCall(std::string name, Args... args)
         {
-            T rt;
+            std::promise<T> promise;
+            auto future = promise.get_future();
+
+            std::function<void(T & t)> func = [&promise](T &t)
+            { promise.set_value(t); };
+            rpcCallAsync(name, func, args...);
+            return future.get();
+        }
+
+        template <typename T, typename... Args>
+        void rpcCallAsync(std::string name, std::function<void(T &t)> callback, Args... args)
+        {
             int procedureId = m_procedureId++;
+            auto callbackNew = [callback](std::string rtString)
+            {
+                int index = 0;
+                T t;
+                deserializeElement(rtString, index, t);
+                callback(t);
+            };
+            m_callbacks[procedureId] = callbackNew;
             std::string parameterString;
             serializeElement(parameterString, std::make_tuple(args...));
             auto dataToSend = encode(name, procedureId, parameterString);
             TcpMessagehandler::sendWithLength(m_socket, dataToSend);
-
-            bool received = false;
-            TcpMessagehandler tcpMessagehandler;
-            tcpMessagehandler.m_onMessageCallback = [&received, procedureId, &rt](std::string rcvdData, int f)
-            {
-                int receivedProcedureId = 0;
-                int index = 0;
-                bool isSuccess;
-                decode(rcvdData, index, isSuccess, receivedProcedureId, rt);
-                if (procedureId == receivedProcedureId)
-                {
-                    received = true;
-                }
-            };
-
-            while (!received)
-            {
-                char recvBuffer[4096];
-                auto recvDataSize = read(m_socket, recvBuffer, 4096);
-                std::string newString;
-                newString.resize(recvDataSize);
-                std::copy_n(std::begin(recvBuffer), recvDataSize, newString.begin());
-                tcpMessagehandler.handleSocketData(newString, m_socket);
-            }
-            return rt;
         }
 
     private:
         std::string m_address;
         uint16_t m_port;
         int m_socket = 0;
+        int m_epollFd = 0;
         int m_procedureId = 1;
+        std::map<int, std::function<void(std::string)>> m_callbacks;
+        std::unique_ptr<std::thread> m_thread;
     };
 }
