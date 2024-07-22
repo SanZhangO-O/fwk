@@ -9,10 +9,11 @@
 int main()
 {
     O_O::RpcMessageHandler handler;
-    std::function<int(O_O::ConnectionInfo, std::string, int)> callbackAAA = [](O_O::ConnectionInfo connectionInfo, std::string a, int b)
+    std::function<int(std::weak_ptr<O_O::ConnectionInfo>, std::string, int)> callbackAAA = [](std::weak_ptr<O_O::ConnectionInfo> wpConnectionInfo, std::string a, int b)
     {
         std::cout << "AAA Called" << std::endl;
-        std::cout << connectionInfo.fd << std::endl;
+        auto spConnectionInfo = wpConnectionInfo.lock();
+        std::cout << spConnectionInfo->fd << std::endl;
         std::cout << "First: " << a << " Second: " << b << std::endl;
         return 123;
     };

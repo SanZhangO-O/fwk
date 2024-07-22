@@ -71,7 +71,7 @@ namespace O_O
             m_info.erase(fd);
         }
 
-        std::function<void(std::string, int)> m_onMessageCallback;
+        std::function<void(const std::string &, int)> m_onMessageCallback;
 
     private:
         enum class ParsingStateE
@@ -105,12 +105,16 @@ namespace O_O
         void handleConnect(const int fd)
         {
             std::cout << "RpcMessageHandler::handleConnect" << std::endl;
-            // TODO:
+            ConnectionInfo{fd};
+            auto item = std::make_shared<ConnectionInfo>();
+            item->fd = fd;
+            m_fdConnectionMap[fd] = item;
         }
 
         void handleDisconnect(const int fd)
         {
             std::cout << "RpcMessageHandler::handleDisconnect" << std::endl;
+            m_fdConnectionMap.erase(fd);
             m_tcpMessageHandler.handleDisconnect(fd);
         }
 
@@ -132,7 +136,7 @@ namespace O_O
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<std::is_same_v<ReturnType, void>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, int procedureId, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, const int procedureId, const tupleType &parameterTuple)
         {
             std::apply(callback, parameterTuple);
             auto dataToSend = encode(true, procedureId, std::string());
@@ -141,7 +145,7 @@ namespace O_O
 
         template <typename ReturnType, typename CallbackType, typename tupleType>
         std::enable_if_t<!std::is_same_v<ReturnType, void>, std::string>
-        applyAndGetReturnMessage(CallbackType callback, int procedureId, tupleType parameterTuple)
+        applyAndGetReturnMessage(CallbackType callback, const int procedureId, const tupleType &parameterTuple)
         {
             auto result = std::apply(callback, parameterTuple);
             std::string rtString;
@@ -165,14 +169,14 @@ namespace O_O
         }
 
         template <typename ReturnType, typename... Args>
-        void registerCallback(const std::string &name, std::function<ReturnType(ConnectionInfo, Args...)> callback)
+        void registerCallback(const std::string &name, std::function<ReturnType(std::weak_ptr<ConnectionInfo>, Args...)> callback)
         {
             auto newCallback = [this, callback](std::string message, int procedureId, int fd)
             {
                 int index = 0;
                 std::tuple<std::decay_t<Args>...> parameterTuple;
                 deserializeElement(message, index, parameterTuple);
-                auto newTuple = std::tuple_cat(std::make_tuple<ConnectionInfo>({fd}), parameterTuple);
+                auto newTuple = std::tuple_cat(std::make_tuple<std::weak_ptr<ConnectionInfo>>(m_fdConnectionMap[fd]), parameterTuple);
                 auto resultData = applyAndGetReturnMessage<ReturnType, decltype(callback), decltype(newTuple)>(callback, procedureId, newTuple);
                 TcpMessagehandler::sendWithLength(fd, resultData);
             };
@@ -182,6 +186,7 @@ namespace O_O
     private:
         std::map<std::string, std::function<void(std::string, int, int)>> m_nameCallbackMap;
         TcpMessagehandler m_tcpMessageHandler;
+        std::map<int, std::shared_ptr<ConnectionInfo>> m_fdConnectionMap;
     };
 
     namespace
@@ -295,6 +300,7 @@ namespace O_O
         RpcClient(const std::string &address, const uint16_t port) : m_address(address), m_port(port)
         {
         }
+
         ~RpcClient()
         {
             if (m_socket != 0)
@@ -332,6 +338,7 @@ namespace O_O
             event.data.fd = m_socket;
             epoll_ctl(m_epollFd, EPOLL_CTL_ADD, m_socket, &event);
 
+            m_threadRunning = true;
             m_thread = std::make_unique<std::thread>([this]()
                                                      {
                                                          TcpMessagehandler tcpMessagehandler;
@@ -339,7 +346,7 @@ namespace O_O
                                                          {
                                                              int receivedProcedureId = 0;
                                                              int index = 0;
-                                                             bool isSuccess;
+                                                             bool isSuccess = false;
                                                              std::string returnValueString;
                                                              decode(data, index, isSuccess, receivedProcedureId, returnValueString);
                                                              auto callback = m_callbacks[receivedProcedureId];
@@ -348,10 +355,9 @@ namespace O_O
                                                          epoll_event events[MAX_EVENTS];
                                                          char buffer[BUFFER_SIZE];
 
-                                                         while (true)
+                                                         while (m_threadRunning)
                                                          {
-                                                             auto numEvents = epoll_wait(m_epollFd, events, MAX_EVENTS, -1);
-
+                                                             auto numEvents = epoll_wait(m_epollFd, events, MAX_EVENTS, 100);
                                                              for (int i = 0; i < numEvents; i++)
                                                              {
                                                                  if (events[i].data.fd == m_socket)
@@ -361,7 +367,7 @@ namespace O_O
                                                                      {
                                                                          epoll_ctl(m_epollFd, EPOLL_CTL_DEL, events[i].data.fd, nullptr);
                                                                          close(events[i].data.fd);
-                                                                         std::cout << "Client disconnected" << std::endl;
+                                                                         goto exitFunc;
                                                                      }
                                                                      else
                                                                      {
@@ -373,26 +379,29 @@ namespace O_O
                                                                      }
                                                                  }
                                                              }
-                                                         } });
+                                                         }
+                                                         exitFunc:
+                                                         std::cout << "Thread exit" << std::endl;
+                                                         m_thread.reset(); });
             m_thread->detach();
             return true;
         }
 
         void stop()
         {
+            m_threadRunning = false;
+            // Wait for thread finished
             close(m_socket);
             m_socket = 0;
             close(m_epollFd);
             m_epollFd = 0;
-            m_thread.reset();
         }
 
         template <typename T, typename... Args>
-        T rpcCall(std::string name, Args... args)
+        T rpcCall(const std::string &name, const Args &...args)
         {
             std::promise<T> promise;
             auto future = promise.get_future();
-
             std::function<void(T & t)> func = [&promise](T &t)
             { promise.set_value(t); };
             rpcCallAsync(name, func, args...);
@@ -400,10 +409,10 @@ namespace O_O
         }
 
         template <typename T, typename... Args>
-        void rpcCallAsync(std::string name, std::function<void(T &t)> callback, Args... args)
+        void rpcCallAsync(const std::string &name, std::function<void(T &t)> callback, const Args &...args)
         {
             int procedureId = m_procedureId++;
-            auto callbackNew = [callback](std::string rtString)
+            auto callbackNew = [callback](const std::string &rtString)
             {
                 int index = 0;
                 T t;
@@ -419,11 +428,12 @@ namespace O_O
 
     private:
         std::string m_address;
-        uint16_t m_port;
+        uint16_t m_port = 0;
         int m_socket = 0;
         int m_epollFd = 0;
         int m_procedureId = 1;
-        std::map<int, std::function<void(std::string)>> m_callbacks;
+        std::map<int, std::function<void(const std::string &)>> m_callbacks;
         std::unique_ptr<std::thread> m_thread;
+        std::atomic_bool m_threadRunning = true;
     };
 }

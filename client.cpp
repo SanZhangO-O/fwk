@@ -13,7 +13,7 @@ int main()
 {
     std::atomic_bool flag = false;
     O_O::RpcClient client("127.0.0.1", 8080);
-    client.start();
+    assert(client.start());
     {
         client.rpcCall<int>("AAA", std::string("ABC"), int(123));
 
@@ -22,6 +22,8 @@ int main()
         // }, std::string("ABC"), int(123));
     }
 
+    client.stop();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     // while(!flag)
     // {
     //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
