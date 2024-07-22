@@ -88,12 +88,35 @@ namespace O_O
         std::map<int, Info> m_info;
     };
 
-    class RpcMessageHandler : public TcpMessagehandler
+    class ConnectionInfo
+    {
+    public:
+        int fd = 0;
+    };
+
+    class RpcMessageHandler
     {
     public:
         RpcMessageHandler()
         {
-            TcpMessagehandler::m_onMessageCallback = std::bind(&RpcMessageHandler::handleMessage, this, std::placeholders::_1, std::placeholders::_2);
+            m_tcpMessageHandler.m_onMessageCallback = std::bind(&RpcMessageHandler::handleMessage, this, std::placeholders::_1, std::placeholders::_2);
+        }
+
+        void handleConnect(const int fd)
+        {
+            std::cout << "RpcMessageHandler::handleConnect" << std::endl;
+            // TODO:
+        }
+
+        void handleDisconnect(const int fd)
+        {
+            std::cout << "RpcMessageHandler::handleDisconnect" << std::endl;
+            m_tcpMessageHandler.handleDisconnect(fd);
+        }
+
+        void handleSocketData(const std::string &message, const int fd)
+        {
+            m_tcpMessageHandler.handleSocketData(message, fd);
         }
 
         void handleMessage(const std::string &message, const int fd)
@@ -136,13 +159,29 @@ namespace O_O
                 std::tuple<std::decay_t<Args>...> parameterTuple;
                 deserializeElement(message, index, parameterTuple);
                 auto resultData = applyAndGetReturnMessage<ReturnType, decltype(callback), decltype(parameterTuple)>(callback, procedureId, parameterTuple);
-                sendWithLength(fd, resultData);
+                TcpMessagehandler::sendWithLength(fd, resultData);
+            };
+            m_nameCallbackMap[name] = newCallback;
+        }
+
+        template <typename ReturnType, typename... Args>
+        void registerCallback(const std::string &name, std::function<ReturnType(ConnectionInfo, Args...)> callback)
+        {
+            auto newCallback = [this, callback](std::string message, int procedureId, int fd)
+            {
+                int index = 0;
+                std::tuple<std::decay_t<Args>...> parameterTuple;
+                deserializeElement(message, index, parameterTuple);
+                auto newTuple = std::tuple_cat(std::make_tuple<ConnectionInfo>({fd}), parameterTuple);
+                auto resultData = applyAndGetReturnMessage<ReturnType, decltype(callback), decltype(newTuple)>(callback, procedureId, newTuple);
+                TcpMessagehandler::sendWithLength(fd, resultData);
             };
             m_nameCallbackMap[name] = newCallback;
         }
 
     private:
         std::map<std::string, std::function<void(std::string, int, int)>> m_nameCallbackMap;
+        TcpMessagehandler m_tcpMessageHandler;
     };
 
     namespace
@@ -154,9 +193,10 @@ namespace O_O
     class TcpServer
     {
     public:
-        TcpServer(int port, std::function<void(const std::string &data, int)> func, std::function<void(int)> disconnectedFunc)
+        TcpServer(int port, std::function<void(const std::string &data, int)> func, std::function<void(int)> connectedFunc, std::function<void(int)> disconnectedFunc)
         {
             m_procFunc = func;
+            m_connectedFunc = connectedFunc;
             m_disconnectedFunc = disconnectedFunc;
 
             m_serverSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -201,14 +241,12 @@ namespace O_O
                     socklen_t clientAddressLength = sizeof(clientAddress);
                     int clientSocket = accept(m_serverSocket, reinterpret_cast<struct sockaddr *>(&clientAddress),
                                               &clientAddressLength);
-                    m_socketFdAddressMap[clientSocket] = clientAddress;
 
                     epoll_event event{};
                     event.events = EPOLLIN;
                     event.data.fd = clientSocket;
                     epoll_ctl(m_epollFd, EPOLL_CTL_ADD, clientSocket, &event);
-
-                    std::cout << "New client connected" << std::endl;
+                    m_connectedFunc(clientSocket);
                 }
                 else
                 {
@@ -217,8 +255,6 @@ namespace O_O
                     {
                         epoll_ctl(m_epollFd, EPOLL_CTL_DEL, m_events[i].data.fd, nullptr);
                         close(m_events[i].data.fd);
-                        std::cout << "Client disconnected" << std::endl;
-                        m_socketFdAddressMap.erase(m_events[i].data.fd);
                         m_disconnectedFunc(m_events[i].data.fd);
                     }
                     else
@@ -248,8 +284,8 @@ namespace O_O
         int m_epollFd = 0;
         int m_numEvents = 0;
         std::function<void(const std::string &data, int)> m_procFunc;
+        std::function<void(int)> m_connectedFunc;
         std::function<void(int)> m_disconnectedFunc;
-        std::map<int, sockaddr_in> m_socketFdAddressMap;
     };
 
     // Client
@@ -345,6 +381,10 @@ namespace O_O
         void stop()
         {
             close(m_socket);
+            m_socket = 0;
+            close(m_epollFd);
+            m_epollFd = 0;
+            m_thread.reset();
         }
 
         template <typename T, typename... Args>

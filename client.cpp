@@ -17,15 +17,15 @@ int main()
     {
         client.rpcCall<int>("AAA", std::string("ABC"), int(123));
 
-        client.rpcCallAsync<int>("AAA", [&flag](int& i){
-            flag = true;
-        }, std::string("ABC"), int(123));
+        // client.rpcCallAsync<int>("AAA", [&flag](int& i){
+        //     flag = true;
+        // }, std::string("ABC"), int(123));
     }
 
-    while(!flag)
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+    // while(!flag)
+    // {
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // }
 
     // {
     //     Struct2 struct2;
