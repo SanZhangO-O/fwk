@@ -1,4 +1,6 @@
-OUTPUT_DIR := ./out
+OUTPUT_DIR := ./../out
+
+all: create_output_dir compile
 
 create_output_dir:
 ifeq ($(shell [ ! -d "$(OUTPUT_DIR)" ]; echo $$?), 0)
