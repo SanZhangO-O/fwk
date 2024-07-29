@@ -1,4 +1,5 @@
 #include <iostream>
+#include <vector>
 using std::cout;
 using std::endl;
 
@@ -8,6 +9,15 @@ using namespace tao::pegtl;
 
 namespace xml
 {
+    enum node_type {
+        ROOT
+    };
+    struct xml_node {
+        int type;
+        std::string value;
+        std::vector<std::shared_ptr<xml_node>> children;
+    };
+
     template <typename>
     struct action
     {
@@ -23,14 +33,7 @@ namespace xml
         }                                                 \
     };
 
-    // struct escaped_gt : string< '&', 'g', 't' > {};
-    // struct escaped_lt : string< '&', 'l', 't' > {};
-    // struct escaped_quotation_mark : string< ''
-    struct char__ : sor<range<'a', 'z'>, range<'A', 'Z'>, range<'0', '9'>>
-    {
-    };
-
-    struct char_ : utf8::range<0x20, 0x10FFFF>
+    struct char_ : not_one<'<'>
     {
     };
     ACTION_PRINT(char_)
@@ -40,23 +43,22 @@ namespace xml
     };
     ACTION_PRINT(string_content)
 
-    struct element_text : seq<char__, until<at<one<'<'>>, char_>>
+    struct string_ : seq<one<'"'>, string_content, one<'"'>>
+    {
+    };
+    ACTION_PRINT(string_)
+
+    struct element_text : seq<char_, until<at<one<'<'>>, char_>>
     {
     };
     ACTION_PRINT(element_text)
-
-    struct string_ : seq<one<'"'>, string_content, any>
-    {
-        using content = string_content;
-    };
-    ACTION_PRINT(string_)
 
     struct element_name_start : sor<range<'a', 'z'>, range<'A', 'Z'>>
     {
     };
     ACTION_PRINT(element_name_start)
 
-    struct element_name : seq<element_name_start, star<sor<range<'a', 'z'>, range<'A', 'Z'>>>>
+    struct element_name : seq<element_name_start, star<sor<range<'a', 'z'>, range<'A', 'Z'>, range<'0', '9'>>>>
     {
     };
     ACTION_PRINT(element_name)
@@ -71,22 +73,27 @@ namespace xml
     };
     ACTION_PRINT(attribute_item)
 
-    struct element_head_inline : seq<one<'<'>, element_name, star<seq<one<' '>, attribute_item>>, star<one<' '>>, element_head_inline_end>
+    struct element_start_lt : one<'<'>
+    {
+    };
+    ACTION_PRINT(element_start_lt)
+
+    struct element_head_inline : seq<element_start_lt, element_name, star<seq<plus<one<' '>>, attribute_item>>, star<one<' '>>, element_head_inline_end>
     {
     };
     ACTION_PRINT(element_head_inline)
 
-    struct element_head : seq<one<'<'>, element_name, star<seq<one<' '>, attribute_item>>, star<one<' '>>, one<'>'>>
+    struct element_head : seq<element_start_lt, element_name, star<seq<plus<one<' '>>, attribute_item>>, star<one<' '>>, one<'>'>>
     {
     };
     ACTION_PRINT(element_head)
 
-    struct element_tail : seq<one<'<'>, one<'/'>, element_name, star<one<' '>>, one<'>'>>
+    struct element_tail : seq<string<'<', '/'>, element_name, star<one<' '>>, one<'>'>>
     {
     };
     ACTION_PRINT(element_tail)
 
-    struct element : sor<seq<element_head, element_tail>, seq<element_head, plus<sor<element, element_text>>, element_tail>>
+    struct element : sor<element_head_inline, seq<element_head, element_tail>, seq<element_head, plus<sor<element, element_text>>, element_tail>>
     {
     };
     ACTION_PRINT(element)
@@ -110,8 +117,10 @@ namespace xml
 int main()
 {
     // std::string data = R"(<A>111<BBB>1</BBB>222</A>)";
-    std::string data = R"(<A>111<B>222</B>333</A>)";
+    // std::string data = R"(<A>111<B>222</B>333</A>)";
     // std::string data = R"(<A></A>)";
+    // std::string data = R"(<A attr1="1" ></A>)";
+    std::string data = R"(<A b1213="1"/>)";
     string_input input(data, "from_content");
     cout << parse<xml::xml, xml::action>(input) << endl;
 }
