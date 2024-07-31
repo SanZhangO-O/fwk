@@ -123,7 +123,7 @@ namespace json
 
 int main()
 {
-    std::string data = R"([1,2,3])";
+    std::string data = R"({"A":[1, "2"]})";
     string_input input(data, "from_content");
     cout << parse<json::json>(input) << endl;
 }
