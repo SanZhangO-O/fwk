@@ -1,0 +1,61 @@
+g++ -c yaml.cpp -o ./../out/yaml.o -I../thirdParty/PEGTL/include
+g++ ./../out/yaml.o -o ./../out/yaml.out
+./../out/yaml.out
+value start
+array_inline start
+array_inline_content start
+array_inline_item start
+array_value start
+array_inline start
+array_inline failure
+object_inline start
+object_inline failure
+string_with_quotation start
+string_with_quotation failure
+string_inline_array start
+string_inline_array apply: 1
+string_inline_array success
+array_value apply: 1
+array_value success
+array_inline_item apply: 1
+array_inline_item success
+array_inline_item_with_dot start
+array_value start
+array_inline start
+array_inline failure
+object_inline start
+object_inline_content start
+object_item start
+object_k start
+string_with_quotation start
+string_with_quotation failure
+object_k apply: B
+object_k success
+object_v start
+object_inline start
+object_inline failure
+array_inline start
+array_inline failure
+string_with_quotation start
+string_with_quotation failure
+object_v apply: 2
+object_v success
+object_item apply: B: 2
+object_item success
+object_inline_content apply: B: 2
+object_inline_content success
+object_inline apply: {B: 2}
+object_inline success
+array_value apply: {B: 2}
+array_value success
+array_inline_item_with_dot apply: ,{B: 2}
+array_inline_item_with_dot success
+array_inline_item_with_dot start
+array_inline_item_with_dot failure
+array_inline_content apply: 1,{B: 2}
+array_inline_content success
+array_inline apply: [1,{B: 2}]
+array_inline success
+value apply: [1,{B: 2}]
+value success
+1
