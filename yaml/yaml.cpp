@@ -14,7 +14,10 @@ namespace yaml
 {
     enum node_type
     {
-        ROOT
+        ROOT,
+        LINE_PREFIX_SPACES,
+        SIMPLE_VALUE,
+        INDENT
     };
 
     struct yaml_node
@@ -23,6 +26,56 @@ namespace yaml
         std::string value;
         std::vector<std::shared_ptr<yaml_node>> children;
     };
+    using parse_stack_type = std::vector<std::shared_ptr<yaml_node>>;
+
+    void find_and_back_to_parent(parse_stack_type &stack, int indent)
+    {
+        while (true)
+        {
+            bool siblingIndentFound = false;
+            int indentOfSibling = 0;
+            for (auto i : stack.back()->children)
+            {
+                if (i->type == INDENT)
+                {
+                    siblingIndentFound = true;
+                    indentOfSibling = i->value.size();
+                    break;
+                }
+            }
+            if (siblingIndentFound)
+            {
+                if (indentOfSibling > indent)
+                {
+                    //
+                    stack.pop_back();
+                }
+                else
+                {
+                    break;
+                }
+            }
+            else
+            {
+                int indentOfParent = 0;
+                auto gp = *(stack.cbegin() + 1);
+                for (auto i : gp->children)
+                {
+                    if (i->type == INDENT)
+                    {
+                        siblingIndentFound = true;
+                        indentOfSibling = i->value.size();
+                        break;
+                    }
+                }
+                if (indentOfParent > indent)
+                {
+                    stack.pop_back();
+                }
+            }
+        }
+    }
+
     template <typename>
     struct action
     {
@@ -65,6 +118,21 @@ namespace yaml
         {                                                  \
             cout << #name << " failure" << endl;           \
         }                                                  \
+    };
+
+#define ACTION_NODE_COMMON(name, type_)                                                                                        \
+    template <>                                                                                                                \
+    struct action<name>                                                                                                        \
+    {                                                                                                                          \
+        template <typename ActionInput>                                                                                        \
+        static void apply(const ActionInput &in, parse_stack_type &stack, std::vector<std::shared_ptr<yaml_node>> &lineBuffer) \
+        {                                                                                                                      \
+            cout << #name << " apply: " << in.string() << endl;                                                                \
+            auto newNode = std::make_shared<yaml_node>();                                                                      \
+            newNode->type = ROOT;                                                                                              \
+            newNode->value = in.string();                                                                                      \
+            lineBuffer.push_back(newNode);                                                                                     \
+        }                                                                                                                      \
     };
 
     struct value;
@@ -159,10 +227,14 @@ namespace yaml
     struct end_document_line : seq<string<'.', '.', '.'>>
     {
     };
-    struct question_line : one<'?'> {};
+    struct question_line : one<'?'>
+    {
+    };
     // ACTION_PRINT(question_line)
     // CONTROL_PRINT(question_line)
-    struct colon_line : one<':'> {};
+    struct colon_line : one<':'>
+    {
+    };
     // ACTION_PRINT(colon_line)
     // CONTROL_PRINT(colon_line)
     struct object_name : seq<char_, until<at<one<':'>>, char_>, one<':'>>
@@ -181,18 +253,94 @@ namespace yaml
     struct array_item_line : one<'-'>
     {
     };
-    struct empty_line : star<one<' '>> {};
-    // ACTION_PRINT(empty_line)
-    // CONTROL_PRINT(empty_line)
-    struct value : sor<array_inline, object_inline, string_with_quotation, string_>
+    struct empty_line : star<one<' '>>
     {
     };
-    struct line : seq<star<space_>, sor<object_name_value_line, object_name, array_item_value_line, array_item_line, begin_document_line, end_document_line, question_line, colon_line, value, empty_line>, star<space_>>
+    struct simple_line_value : string_
     {
     };
-    // ACTION_PRINT(line)
-    // CONTROL_PRINT(line)
-    struct line_with_new_line : seq<one<'\n'>, line>
+    template <>
+    struct action<simple_line_value>
+    {
+        template <typename ActionInput>
+        static void apply(const ActionInput &in, parse_stack_type &stack, std::vector<std::shared_ptr<yaml_node>> &lineBuffer)
+        {
+            cout << "simple_line_value apply: " << in.string() << endl;
+            auto newNode = std::make_shared<yaml_node>();
+            newNode->type = SIMPLE_VALUE;
+            newNode->value = in.string();
+            stack.back()->children.push_back(newNode);
+        }
+    };
+
+    struct value : sor<array_inline, object_inline, string_with_quotation, simple_line_value>
+    {
+    };
+    struct line_prefix_spaces : star<space_>
+    {
+    };
+    template <>
+    struct action<line_prefix_spaces>
+    {
+        template <typename ActionInput>
+        static void apply(const ActionInput &in, parse_stack_type &stack, std::vector<std::shared_ptr<yaml_node>> &lineBuffer)
+        {
+            cout << "line_prefix_spaces apply: " << in.string() << endl;
+            auto newNode = std::make_shared<yaml_node>();
+            newNode->type = INDENT;
+            newNode->value = in.string();
+            stack.back()->children.push_back(newNode);
+            int indent = in.string().size();
+            cout << "indent " << indent << endl;
+            // Back to corret level
+        }
+    };
+
+    struct line_suffix_spaces : star<space_>
+    {
+    };
+    // ACTION_NODE_COMMON(line_suffix_spaces, ROOT)
+    struct line : seq<line_prefix_spaces, sor<object_name_value_line, object_name, array_item_value_line, array_item_line, begin_document_line, end_document_line, question_line, colon_line, value, empty_line>, line_suffix_spaces>
+    {
+    };
+
+    // template <>
+    // struct control<line>
+    //     : normal<line>
+    // {
+    //     template <typename ParseInput>
+    //     static void start(ParseInput &in, parse_stack_type &data, std::vector<std::shared_ptr<yaml_node>> &lineBuffer)
+    //     {
+    //         assert(lineBuffer.empty());
+    //     }
+
+    //     template <typename ParseInput, typename... States>
+    //     static void success(const ParseInput &in, parse_stack_type &data, std::vector<std::shared_ptr<yaml_node>> &lineBuffer) noexcept
+    //     {
+    //         int indent = 0;
+    //         for(auto i:lineBuffer)
+    //         {
+    //             if (i->type == LINE_PREFIX_SPACES)
+    //             {
+    //                 indent = i->value.size();
+    //                 break;
+    //             }
+    //         }
+    //         //Find parent by indent
+    //         // data.top()->
+    //         lineBuffer.clear();
+    //     }
+
+    //     template <typename ParseInput>
+    //     static void failure(ParseInput &in, parse_stack_type &data, std::vector<std::shared_ptr<yaml_node>> &lineBuffer)
+    //     {
+    //         lineBuffer.clear();
+    //     }
+    // };
+    struct new_line : one<'\n'>
+    {
+    };
+    struct line_with_new_line : seq<new_line, line>
     {
     };
     // ACTION_PRINT(line_with_new_line)
@@ -202,14 +350,43 @@ namespace yaml
     };
 }
 
+void dump_yaml(std::shared_ptr<yaml::yaml_node> node)
+{
+    std::stack<std::shared_ptr<yaml::yaml_node>> stack;
+    stack.push(node);
+    cout << "dump_yaml: " << endl;
+    while (!stack.empty())
+    {
+        auto current = stack.top();
+        stack.pop();
+        cout << current->value << "`";
+        for (auto it = current->children.rbegin(); it != current->children.rend(); it++)
+        {
+            stack.push(*it);
+        }
+    }
+    cout << endl;
+}
+
 int main()
 {
+    std::shared_ptr<yaml::yaml_node> root = std::make_shared<yaml::yaml_node>();
+    root->type = yaml::ROOT;
+    root->value = "";
+
+    std::stack<std::shared_ptr<yaml::yaml_node>> parseStack;
+    parseStack.push(root);
+
+    std::vector<std::shared_ptr<yaml::yaml_node>> lineBuffer;
+
     // std::string data = R"({[1,2,3]: [3,4,5]})";
-    std::string data = R"(AAA)";
+    std::string data = R"(  AAA
+  BBB)";
     // std::string data = R"({A: [1,2,3]})";
     // std::string data = R"({A: 1})";
     // std::string data = R"({A: 1})";
     // std::string data = "(a_\nb";
     string_input input(data, "from_content");
-    cout << parse<yaml::yaml, yaml::action, yaml::control>(input) << endl;
+    cout << parse<yaml::yaml, yaml::action, yaml::control>(input, parseStack, lineBuffer) << endl;
+    dump_yaml(root);
 }
