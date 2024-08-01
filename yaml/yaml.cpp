@@ -12,6 +12,17 @@ using namespace tao::pegtl;
 
 namespace yaml
 {
+    enum node_type
+    {
+        ROOT
+    };
+
+    struct yaml_node
+    {
+        int type;
+        std::string value;
+        std::vector<std::shared_ptr<yaml_node>> children;
+    };
     template <typename>
     struct action
     {
@@ -122,15 +133,13 @@ namespace yaml
     struct object_k : sor<object_inline, array_inline, string_with_quotation, key_without_quotation>
     {
     };
-    // ACTION_PRINT(object_k)
-    // CONTROL_PRINT(object_k)
     struct value_without_quotation : until<at<sor<one<','>, one<'}'>>>, char_>
     {
     };
     struct object_v : sor<object_inline, array_inline, string_with_quotation, value_without_quotation>
     {
     };
-    struct object_kv_pair : seq<object_k, one<':'>, plus<one<' '>>, object_v>
+    struct object_kv_pair : seq<object_k, plus<one<' '>>, one<':'>, plus<one<' '>>, object_v>
     {
     };
     struct object_kv_pair_with_dot : seq<one<','>, object_kv_pair>
@@ -150,76 +159,57 @@ namespace yaml
     struct end_document_line : seq<string<'.', '.', '.'>>
     {
     };
-    // struct string_line : seq<star<space_>, plus<char_>, star<space_>>
-    // {
-    // };
-    // ACTION_PRINT(string_line)
-    // CONTROL_PRINT(string_line)
-
-    struct object_name : seq<until<at<one<':'>>, char_>, one<':'>>
+    struct question_line : one<'?'> {};
+    // ACTION_PRINT(question_line)
+    // CONTROL_PRINT(question_line)
+    struct colon_line : one<':'> {};
+    // ACTION_PRINT(colon_line)
+    // CONTROL_PRINT(colon_line)
+    struct object_name : seq<char_, until<at<one<':'>>, char_>, one<':'>>
     {
     };
-    ACTION_PRINT(object_name)
-    CONTROL_PRINT(object_name)
+    // ACTION_PRINT(object_name)
+    // CONTROL_PRINT(object_name)
     struct object_name_value_line : seq<object_name, plus<space_>, value>
     {
     };
-    ACTION_PRINT(object_name_value_line)
-    CONTROL_PRINT(object_name_value_line)
-    // struct object_name : seq<star<space_>, object_name, star<space_>>
-    // {
-    // };
-    // struct object_name_value_line : seq<star<space_>, until<at<one<':'>>, char_>, one<':'>, plus<space_>, plus<char_>>
-    // {
-    // };
     // ACTION_PRINT(object_name_value_line)
     // CONTROL_PRINT(object_name_value_line)
     struct array_item_value_line : seq<one<'-'>, plus<one<' '>>, value>
     {
     };
-    ACTION_PRINT(array_item_value_line)
-    CONTROL_PRINT(array_item_value_line)
     struct array_item_line : one<'-'>
     {
     };
-    // struct empty_line : seq<opt<one<' '>>>
-    // {
-    // };
-
+    struct empty_line : star<one<' '>> {};
+    // ACTION_PRINT(empty_line)
+    // CONTROL_PRINT(empty_line)
     struct value : sor<array_inline, object_inline, string_with_quotation, string_>
     {
     };
-    ACTION_PRINT(value)
-    CONTROL_PRINT(value)
-
-    // struct line : sor<begin_document_line, object_name_value_line, object_name, array_item_value_line, string_line, empty_line>
-    // {
-    // };
-    struct line : seq<sor<object_name_value_line, object_name, array_item_value_line, array_item_line, begin_document_line, end_document_line>, star<space>>
+    struct line : seq<star<space_>, sor<object_name_value_line, object_name, array_item_value_line, array_item_line, begin_document_line, end_document_line, question_line, colon_line, value, empty_line>, star<space_>>
     {
     };
     // ACTION_PRINT(line)
     // CONTROL_PRINT(line)
-
-    // struct line_with_new_line : seq<line, one<'\n'>>
-    // {
-    // };
+    struct line_with_new_line : seq<one<'\n'>, line>
+    {
+    };
     // ACTION_PRINT(line_with_new_line)
     // CONTROL_PRINT(line_with_new_line)
-
-    // struct yaml : seq<star<line_with_new_line>, opt<line>, eof>
-    // {
-    // };
+    struct yaml : seq<opt<seq<line, star<line_with_new_line>>>, eof>
+    {
+    };
 }
 
 int main()
 {
     // std::string data = R"({[1,2,3]: [3,4,5]})";
-    std::string data = R"(- a)";
+    std::string data = R"(AAA)";
     // std::string data = R"({A: [1,2,3]})";
     // std::string data = R"({A: 1})";
     // std::string data = R"({A: 1})";
     // std::string data = "(a_\nb";
     string_input input(data, "from_content");
-    cout << parse<yaml::line, yaml::action, yaml::control>(input) << endl;
+    cout << parse<yaml::yaml, yaml::action, yaml::control>(input) << endl;
 }
