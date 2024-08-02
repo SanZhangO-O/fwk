@@ -86,6 +86,38 @@ namespace yaml
         }                                                                 \
     };
 
+#define ACTION_NODE_PUSH(name, type_)                                     \
+    template <>                                                           \
+    struct action<name>                                                   \
+    {                                                                     \
+        template <typename ActionInput>                                   \
+        static void apply(const ActionInput &in, parse_stack_type &stack) \
+        {                                                                 \
+            cout << #name << " apply: " << in.string() << endl;           \
+            auto newNode = std::make_shared<yaml_node>();                 \
+            newNode->type = ROOT;                                         \
+            newNode->value = in.string();                                 \
+            stack.back()->children.push_back(newNode);                    \
+            stack.push_back(newNode);                                     \
+        }                                                                 \
+    };
+
+#define ACTION_NODE_POP(name, type_)                                      \
+    template <>                                                           \
+    struct action<name>                                                   \
+    {                                                                     \
+        template <typename ActionInput>                                   \
+        static void apply(const ActionInput &in, parse_stack_type &stack) \
+        {                                                                 \
+            cout << #name << " apply: " << in.string() << endl;           \
+            auto newNode = std::make_shared<yaml_node>();                 \
+            newNode->type = ROOT;                                         \
+            newNode->value = in.string();                                 \
+            stack.back()->children.push_back(newNode);                    \
+            stack.pop_back();                                             \
+        }                                                                 \
+    };
+
     struct value_single_line;
     struct object_inline;
     struct array_inline;
@@ -110,60 +142,28 @@ namespace yaml
     struct string_as_array_value : until<at<sor<one<','>, one<']'>>>, char_>
     {
     };
-    template <>
-    struct action<string_as_array_value>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "string_as_array_value apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(string_as_array_value, ROOT)
     struct left_quotation : one<'\"'>
     {
     };
+    ACTION_NODE_COMMON(left_quotation, ROOT)
     struct right_quotation : left_quotation
     {
     };
+    ACTION_NODE_COMMON(right_quotation, ROOT)
     struct string_with_quotation_content : until<at<one<'\"'>>, char_>
     {
     };
+    CONTROL_PRINT(string_with_quotation_content)
+    ACTION_NODE_COMMON(string_with_quotation_content, ROOT)
     struct string_with_quotation : seq<left_quotation, string_with_quotation_content, right_quotation>
     {
     };
-    template <>
-    struct action<string_with_quotation_content>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "string_with_quotation_content apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    CONTROL_PRINT(string_with_quotation)
     struct array_inline_value_space : plus<space_>
     {
     };
-    template <>
-    struct action<array_inline_value_space>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "array_inline_value_space apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(array_inline_value_space, ROOT)
     struct array_inline_value : seq<opt<array_inline_value_space>, sor<array_inline, object_inline, string_with_quotation, string_as_array_value>, opt<array_inline_value_space>>
     {
     };
@@ -171,53 +171,15 @@ namespace yaml
     struct array_inline_begin : one<'['>
     {
     };
-    template <>
-    struct action<array_inline_begin>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "array_inline_begin apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-            stack.push_back(newNode);
-        }
-    };
+    ACTION_NODE_PUSH(array_inline_begin, ROOT)
     struct array_inline_end : one<']'>
     {
     };
-    template <>
-    struct action<array_inline_end>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "array_inline_end: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-            stack.pop_back();
-        }
-    };
+    ACTION_NODE_POP(array_inline_end, ROOT)
     struct dot : one<','>
     {
     };
-    template <>
-    struct action<dot>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "dot: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(dot, ROOT)
     struct array_value_with_dot : seq<dot, array_inline_value>
     {
     };
@@ -233,143 +195,43 @@ namespace yaml
     struct object_inline_begin : one<'{'>
     {
     };
-    template <>
-    struct action<object_inline_begin>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "object_inline_begin apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-            stack.push_back(newNode);
-        }
-    };
+    ACTION_NODE_PUSH(object_inline_begin, ROOT)
     struct object_inline_end : one<'}'>
     {
     };
-    template <>
-    struct action<object_inline_end>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "object_inline_end apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-            stack.pop_back();
-        }
-    };
+    ACTION_NODE_POP(object_inline_end, ROOT)
     struct key_without_quotation : until<at<sor<one<':'>, one<','>, one<'}'>>>, char_>
     {
     };
     struct object_inline_k : sor<object_inline, array_inline, string_with_quotation, key_without_quotation>
     {
     };
-    template <>
-    struct action<object_inline_k>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "object_inline_k apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-            stack.push_back(newNode);
-        }
-    };
+    ACTION_NODE_PUSH(object_inline_k, ROOT)
     struct value_without_quotation : until<at<sor<one<','>, one<'}'>>>, char_>
     {
     };
     struct object_inline_v : sor<object_inline, array_inline, string_with_quotation, value_without_quotation>
     {
     };
-    template <>
-    struct action<object_inline_v>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "object_inline_v apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-            stack.pop_back();
-        }
-    };
+    ACTION_NODE_POP(object_inline_v, ROOT)
     struct colon : one<':'>
     {
     };
-    template <>
-    struct action<colon>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "colon apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(colon, ROOT)
     struct spaces_optional : star<one<' '>>
     {
     };
-    template <>
-    struct action<spaces_optional>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "spaces_optional apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(spaces_optional, ROOT)
     struct spaces_required : plus<one<' '>>
     {
     };
-    template <>
-    struct action<spaces_required>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "spaces_required apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(spaces_required, ROOT)
     struct object_kv_pair : seq<object_inline_k, opt<spaces_optional, colon, opt<spaces_required, object_inline_v>>>
     {
     };
     ACTION_PRINT(object_kv_pair)
     struct dot_in_object : dot {};
-    template <>
-    struct action<dot_in_object>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "dot_in_object apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = ROOT;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(dot_in_object, ROOT)
     struct object_kv_pair_with_dot : seq<dot_in_object, object_kv_pair>
     {
     };
@@ -425,24 +287,16 @@ namespace yaml
     struct simple_line_value : string_
     {
     };
-    template <>
-    struct action<simple_line_value>
-    {
-        template <typename ActionInput>
-        static void apply(const ActionInput &in, parse_stack_type &stack)
-        {
-            cout << "simple_line_value apply: " << in.string() << endl;
-            auto newNode = std::make_shared<yaml_node>();
-            newNode->type = SIMPLE_VALUE;
-            newNode->value = in.string();
-            stack.back()->children.push_back(newNode);
-        }
-    };
+    ACTION_NODE_COMMON(simple_line_value, ROOT)
 
     struct value_single_line : sor<array_inline, object_inline, string_with_quotation, string_>
     {
     };
     ACTION_PRINT(value_single_line)
+
+    void get_sibling_type(std::shared_ptr<yaml_node> node)
+    {
+    }
 
     void find_and_back_to_parent(parse_stack_type &stack, int indent)
     {
@@ -528,7 +382,11 @@ namespace yaml
     {
     };
     ACTION_PRINT(line_suffix_spaces)
-    struct line : seq<line_prefix_spaces, sor<array_inline, object_inline, object_name_value_line, object_name, array_item_value_line, array_item_line, string_with_quotation, star<char_>>, line_suffix_spaces>
+    struct string_line : star<char_>
+    {
+    };
+    ACTION_NODE_COMMON(string_line, ROOT)
+    struct line : seq<line_prefix_spaces, sor<array_inline, object_inline, object_name_value_line, object_name, array_item_value_line, array_item_line, string_with_quotation, string_line>, line_suffix_spaces>
     {
     };
     ACTION_PRINT(line)
@@ -578,7 +436,8 @@ int main()
 
     // std::vector<std::shared_ptr<yaml::yaml_node>> lineBuffer;
 
-    std::string data = R"({A:,B,C})";
+    std::string data = R"("AAas
+rf")";
     string_input input(data, "from_content");
     cout << parse<yaml::yaml, yaml::action, yaml::control>(input, parseStack) << endl;
     dump_yaml(root);
